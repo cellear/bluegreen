@@ -1,0 +1,7 @@
+name = Blue-Green Deployment
+description = Provides blue-green deployment functionality with dual database environments for easy site updates and rollbacks.
+package = Development
+type = module
+backdrop = 1.x
+configure = admin/config/development/bluegreen
+

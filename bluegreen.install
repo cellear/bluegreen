@@ -1,0 +1,65 @@
+<?php
+/**
+ * @file
+ * Install, update and uninstall functions for the Blue-Green Deployment module.
+ */
+
+/**
+ * Implements hook_requirements().
+ */
+function bluegreen_requirements($phase) {
+  $requirements = array();
+  $t = get_t();
+
+  if ($phase == 'runtime') {
+    global $databases, $bluegreen_active_environment;
+    
+    $requirements['bluegreen_config'] = array(
+      'title' => $t('Blue-Green Deployment Configuration'),
+    );
+
+    // Check if both environments are configured
+    $blue_configured = isset($databases['blue']['default']);
+    $green_configured = isset($databases['green']['default']);
+    
+    if ($blue_configured && $green_configured) {
+      $requirements['bluegreen_config']['value'] = $t('Configured');
+      $requirements['bluegreen_config']['description'] = $t('Both Blue and Green environments are properly configured. Active environment: @env', 
+        array('@env' => !empty($bluegreen_active_environment) ? $bluegreen_active_environment : 'blue'));
+      $requirements['bluegreen_config']['severity'] = REQUIREMENT_OK;
+    }
+    else {
+      $requirements['bluegreen_config']['value'] = $t('Not configured');
+      $missing = array();
+      if (!$blue_configured) {
+        $missing[] = 'Blue';
+      }
+      if (!$green_configured) {
+        $missing[] = 'Green';
+      }
+      $requirements['bluegreen_config']['description'] = $t('Missing configuration for: @envs. Please configure both database environments in settings.php.', 
+        array('@envs' => implode(', ', $missing)));
+      $requirements['bluegreen_config']['severity'] = REQUIREMENT_WARNING;
+    }
+  }
+
+  return $requirements;
+}
+
+/**
+ * Implements hook_install().
+ */
+function bluegreen_install() {
+  backdrop_set_message(t('Blue-Green Deployment module has been enabled. Visit the <a href="@url">configuration page</a> to manage your environments.', 
+    array('@url' => url('admin/config/development/bluegreen'))));
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function bluegreen_uninstall() {
+  // Clean up state variables
+  state_del('bluegreen_last_sync_red');
+  state_del('bluegreen_last_sync_green');
+}
+

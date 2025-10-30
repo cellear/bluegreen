@@ -1,0 +1,295 @@
+<?php
+/**
+ * @file
+ * Blue-Green Deployment module.
+ *
+ * Provides dual database environment management for safe deployment and
+ * easy rollback functionality.
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function bluegreen_menu() {
+  $items = array();
+
+  $items['admin/config/development/bluegreen'] = array(
+    'title' => 'Blue-Green Deployment',
+    'description' => 'Manage Blue and Green database environments for deployment.',
+    'page callback' => 'backdrop_get_form',
+    'page arguments' => array('bluegreen_admin_form'),
+    'access arguments' => array('administer bluegreen deployment'),
+    'file' => 'bluegreen.admin.inc',
+    'type' => MENU_NORMAL_ITEM,
+  );
+
+  $items['admin/config/development/bluegreen/overview'] = array(
+    'title' => 'Overview',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => -10,
+  );
+
+  $items['admin/config/development/bluegreen/setup'] = array(
+    'title' => 'Setup',
+    'description' => 'Set up Blue-Green deployment for this site.',
+    'page callback' => 'backdrop_get_form',
+    'page arguments' => array('bluegreen_setup_form'),
+    'access arguments' => array('administer bluegreen deployment'),
+    'file' => 'bluegreen.admin.inc',
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 10,
+  );
+
+  $items['admin/config/development/bluegreen/switch/%'] = array(
+    'title' => 'Switch Environment',
+    'page callback' => 'bluegreen_switch_environment_callback',
+    'page arguments' => array(5),
+    'access arguments' => array('switch environments'),
+    'file' => 'bluegreen.admin.inc',
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['admin/config/development/bluegreen/sync/%/%'] = array(
+    'title' => 'Sync Environment',
+    'page callback' => 'bluegreen_sync_environment_callback',
+    'page arguments' => array(5, 6),
+    'access arguments' => array('sync environments'),
+    'file' => 'bluegreen.admin.inc',
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['admin/config/development/bluegreen/backup/%'] = array(
+    'title' => 'Backup Environment',
+    'page callback' => 'bluegreen_backup_environment_callback',
+    'page arguments' => array(5),
+    'access arguments' => array('sync environments'),
+    'file' => 'bluegreen.admin.inc',
+    'type' => MENU_CALLBACK,
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_permission().
+ */
+function bluegreen_permission() {
+  return array(
+    'administer bluegreen deployment' => array(
+      'title' => t('Administer blue-green deployment'),
+      'description' => t('Full access to blue-green deployment management, including switching and syncing environments.'),
+      'restrict access' => TRUE,
+    ),
+    'switch environments' => array(
+      'title' => t('Switch environments'),
+      'description' => t('Switch which environment (Blue or Green) is live.'),
+      'restrict access' => TRUE,
+    ),
+    'sync environments' => array(
+      'title' => t('Sync environments'),
+      'description' => t('Sync database content between Blue and Green environments.'),
+      'restrict access' => TRUE,
+    ),
+  );
+}
+
+/**
+ * Get the currently active environment.
+ *
+ * @return string
+ *   Either 'blue' or 'green'.
+ */
+function bluegreen_get_active_environment() {
+  // Use state system instead of global variable
+  return state_get('bluegreen_active_environment', 'blue');
+}
+
+/**
+ * Get database connection information for an environment.
+ *
+ * @param string $environment
+ *   Either 'blue' or 'green'.
+ *
+ * @return array|false
+ *   Database connection array or FALSE if not configured.
+ */
+function bluegreen_get_environment_info($environment) {
+  global $databases;
+  
+  if (isset($databases[$environment]['default'])) {
+    return $databases[$environment]['default'];
+  }
+  
+  return FALSE;
+}
+
+/**
+ * Check if blue-green deployment is properly configured.
+ *
+ * @return bool
+ *   TRUE if both blue and green databases are configured.
+ */
+function bluegreen_is_configured() {
+  return (bluegreen_get_environment_info('blue') !== FALSE && 
+          bluegreen_get_environment_info('green') !== FALSE);
+}
+
+/**
+ * Get the idle (non-active) environment name.
+ *
+ * @return string
+ *   Either 'blue' or 'green'.
+ */
+function bluegreen_get_idle_environment() {
+  $active = bluegreen_get_active_environment();
+  return $active === 'blue' ? 'green' : 'blue';
+}
+
+/**
+ * Get last sync timestamp for an environment.
+ *
+ * @param string $environment
+ *   Either 'blue' or 'green'.
+ *
+ * @return int|false
+ *   Unix timestamp or FALSE if never synced.
+ */
+function bluegreen_get_last_sync($environment) {
+  return state_get('bluegreen_last_sync_' . $environment, FALSE);
+}
+
+/**
+ * Set last sync timestamp for an environment.
+ *
+ * @param string $environment
+ *   Either 'blue' or 'green'.
+ * @param int $timestamp
+ *   Unix timestamp.
+ */
+function bluegreen_set_last_sync($environment, $timestamp = NULL) {
+  if ($timestamp === NULL) {
+    $timestamp = REQUEST_TIME;
+  }
+  state_set('bluegreen_last_sync_' . $environment, $timestamp);
+}
+
+/**
+ * Get table count for an environment.
+ *
+ * @param string $environment
+ *   Either 'blue' or 'green'.
+ *
+ * @return int
+ *   Number of tables in the environment.
+ */
+function bluegreen_get_table_count($environment) {
+  $info = bluegreen_get_environment_info($environment);
+  if (!$info) {
+    return 0;
+  }
+
+  try {
+    // Ensure all required fields are set with defaults
+    $info += array(
+      'driver' => 'mysql',
+      'host' => 'localhost',
+      'port' => 3306,
+      'username' => '',
+      'password' => '',
+      'prefix' => '',
+    );
+    
+    // Connect to the specific environment
+    Database::addConnectionInfo($environment . '_temp', 'default', $info);
+    Database::setActiveConnection($environment . '_temp');
+    $connection = Database::getConnection('default', $environment . '_temp');
+    
+    // Get tables with the environment's prefix
+    $prefix = !empty($info['prefix']) ? $info['prefix'] : '';
+    $tables = $connection->schema()->findTables($prefix . '%');
+    
+    // Restore default connection
+    Database::setActiveConnection('default');
+    Database::removeConnection($environment . '_temp');
+    
+    return count($tables);
+  }
+  catch (Exception $e) {
+    watchdog('bluegreen', 'Error counting tables for @env: @message', 
+      array('@env' => $environment, '@message' => $e->getMessage()), 
+      WATCHDOG_ERROR);
+    
+    // Make sure to restore connection even on error
+    try {
+      Database::setActiveConnection('default');
+      Database::removeConnection($environment . '_temp');
+    }
+    catch (Exception $e2) {
+      // Ignore cleanup errors
+    }
+    
+    return 0;
+  }
+}
+
+/**
+ * Check if an environment has been installed (has tables).
+ *
+ * @param string $environment
+ *   Either 'blue' or 'green'.
+ *
+ * @return bool
+ *   TRUE if environment has tables.
+ */
+function bluegreen_environment_is_installed($environment) {
+  return bluegreen_get_table_count($environment) > 0;
+}
+
+/**
+ * Implements hook_init().
+ */
+function bluegreen_init() {
+  // Add admin CSS if on the blue-green admin page
+  if (arg(0) == 'admin' && arg(1) == 'config' && arg(2) == 'development' && arg(3) == 'bluegreen') {
+    backdrop_add_css(backdrop_get_path('module', 'bluegreen') . '/css/bluegreen.admin.css');
+  }
+}
+
+/**
+ * Implements hook_admin_bar_output_build().
+ */
+function bluegreen_admin_bar_output_build(&$content) {
+  if (!bluegreen_is_configured()) {
+    return;
+  }
+  
+  $active = bluegreen_get_active_environment();
+  $color_name = ucfirst($active);
+  
+  // Add environment indicator to admin bar
+  $content['environment'] = array(
+    '#theme' => 'admin_bar_links',
+    '#wrapper_attributes' => array(
+      'id' => 'admin-bar-environment',
+      'class' => array('admin-bar-environment', 'environment-' . $active),
+    ),
+    '#weight' => -100,
+  );
+  
+  $content['environment']['indicator'] = array(
+    '#title' => '<span class="environment-label">' . $color_name . '</span>',
+    '#href' => 'admin/config/development/bluegreen',
+    '#options' => array(
+      'html' => TRUE,
+      'attributes' => array(
+        'class' => array('environment-link'),
+        'title' => t('Current environment: @env', array('@env' => $color_name)),
+      ),
+    ),
+    '#weight' => 0,
+  );
+  
+  // Add CSS for styling
+  backdrop_add_css(backdrop_get_path('module', 'bluegreen') . '/css/bluegreen.admin.css');
+}
+

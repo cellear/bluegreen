@@ -423,36 +423,21 @@ function bluegreen_switch_environment($new_environment) {
     throw new Exception(t('Could not get configuration for @env environment.', array('@env' => $new_environment)));
   }
   
-  // Update settings.php to change the prefix in the default database configuration
-  $settings_file = conf_path() . '/settings.php';
-  $settings_content = file_get_contents($settings_file);
-  $original_content = $settings_content;
-  
-  // Find the 'default' => array section and update its prefix
+  // Record the current prefix before updating settings.php.
+  $old_prefix = isset($databases['default']['default']['prefix']) ? $databases['default']['default']['prefix'] : '';
   $new_prefix = $env_info['prefix'];
+
+  // Use Backdrop's helper to rewrite settings.php instead of manual regex.
+  require_once BACKDROP_ROOT . '/core/includes/install.inc';
+  backdrop_rewrite_settings(array(
+    "databases['default']['default']['prefix']" => array(
+      'value' => $new_prefix,
+      'required' => TRUE,
+    ),
+  ));
   
-  // Use regex to replace the prefix in the 'default' database configuration
-  // This matches: 'prefix' => 'anything', within the 'default' => array section
-  $pattern = "/(\'default\'\s*=>\s*array\s*\(\s*\'default\'\s*=>\s*array\s*\([^)]*\'prefix\'\s*=>\s*\')([^']*)(\')/s";
-  $replacement = '${1}' . $new_prefix . '${3}';
-  $settings_content = preg_replace($pattern, $replacement, $settings_content);
-  
-  // Check if replacement actually happened
-  if ($settings_content === $original_content) {
-    throw new Exception(t('Failed to update prefix in settings.php. Pattern did not match.'));
-  }
-  
-  // Write back to file
-  $bytes_written = file_put_contents($settings_file, $settings_content);
-  if ($bytes_written === FALSE) {
-    throw new Exception(t('Could not write to settings.php. Please check file permissions.'));
-  }
-  
-  // Ensure file was written
-  clearstatcache(TRUE, $settings_file);
-  
-  watchdog('bluegreen', 'Updated settings.php: changed prefix from @old to @new (@bytes bytes written)', 
-    array('@old' => $databases['default']['default']['prefix'], '@new' => $new_prefix, '@bytes' => $bytes_written), 
+  watchdog('bluegreen', 'Updated settings.php: changed prefix from @old to @new', 
+    array('@old' => $old_prefix, '@new' => $new_prefix), 
     WATCHDOG_INFO);
   
   // Use state system to store the active environment

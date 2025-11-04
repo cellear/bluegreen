@@ -577,6 +577,12 @@ function bluegreen_backup_environment_callback($environment) {
  */
 function bluegreen_clear_cache_callback() {
   // Clear all caches now that the new database prefix is active
+  // Clear admin bar cache specifically first
+  if (function_exists('cache_clear_all')) {
+    cache_clear_all('*', 'cache_admin_bar', TRUE);
+  }
+  
+  // Then clear all other caches
   backdrop_flush_all_caches();
   
   backdrop_set_message(t('Cache cleared for new environment.'), 'status');

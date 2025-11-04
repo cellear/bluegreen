@@ -59,7 +59,31 @@ function bluegreen_install() {
  */
 function bluegreen_uninstall() {
   // Clean up state variables
-  state_del('bluegreen_last_sync_red');
+  state_del('bluegreen_active_environment');
+  state_del('bluegreen_last_sync_blue');
   state_del('bluegreen_last_sync_green');
+  
+  // Optionally clean up alt_ tables
+  // Get list of all alt_ tables
+  $alt_tables = db_find_tables('alt_%');
+  
+  if (!empty($alt_tables)) {
+    $table_count = count($alt_tables);
+    
+    // Drop all alt_ tables
+    foreach ($alt_tables as $table) {
+      db_query("DROP TABLE IF EXISTS {$table}");
+    }
+    
+    watchdog('bluegreen', 'Uninstalled bluegreen module and removed @count alt_ tables', 
+      array('@count' => $table_count), WATCHDOG_INFO);
+  }
+  
+  // Remove settings.bluegreen.php if it exists
+  $settings_file = BACKDROP_ROOT . '/settings.bluegreen.php';
+  if (file_exists($settings_file)) {
+    unlink($settings_file);
+    watchdog('bluegreen', 'Removed settings.bluegreen.php file', array(), WATCHDOG_INFO);
+  }
 }
 

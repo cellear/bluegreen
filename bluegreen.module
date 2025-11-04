@@ -67,6 +67,14 @@ function bluegreen_menu() {
     'type' => MENU_CALLBACK,
   );
 
+  $items['admin/config/development/bluegreen/clear-cache'] = array(
+    'title' => 'Clear Cache After Switch',
+    'page callback' => 'bluegreen_clear_cache_callback',
+    'access arguments' => array('switch environments'),
+    'file' => 'bluegreen.admin.inc',
+    'type' => MENU_CALLBACK,
+  );
+
   return $items;
 }
 
@@ -155,6 +163,28 @@ function bluegreen_get_idle_environment() {
 }
 
 /**
+ * Get list of tables that should be shared across both environments.
+ *
+ * These tables are NOT duplicated and NOT synced between environments.
+ * They maintain a single copy used by both blue and green.
+ *
+ * @return array
+ *   Array of table base names (without prefix) that should be shared.
+ */
+function bluegreen_get_shared_tables() {
+  return array(
+    'state',           // System state - needs to persist across switches
+    'watchdog',        // Log entries - single audit trail
+    'users',           // User accounts - prevent password rollbacks
+    'users_roles',     // User role assignments
+    'role',            // Roles definition
+    'role_permission', // Role permissions
+    'authmap',         // External authentication mappings
+    'sessions',        // Active sessions - keep users logged in
+  );
+}
+
+/**
  * Get last sync timestamp for an environment.
  *
  * @param string $environment
@@ -214,7 +244,13 @@ function bluegreen_get_table_count($environment) {
     $connection = Database::getConnection('default', $environment . '_temp');
     
     // Get tables with the environment's prefix
-    $prefix = !empty($info['prefix']) ? $info['prefix'] : '';
+    // Handle both string and array-based prefixes
+    if (is_array($info['prefix'])) {
+      $prefix = isset($info['prefix']['default']) ? $info['prefix']['default'] : '';
+    }
+    else {
+      $prefix = !empty($info['prefix']) ? $info['prefix'] : '';
+    }
     $tables = $connection->schema()->findTables($prefix . '%');
     
     // Restore default connection

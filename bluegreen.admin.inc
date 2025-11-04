@@ -11,13 +11,11 @@ function bluegreen_admin_form($form, &$form_state) {
   // Check if blue-green is configured
   if (!bluegreen_is_configured()) {
     backdrop_set_message(t('Blue-Green deployment has not been set up yet.'), 'warning');
+    $setup_url = url('admin/config/development/bluegreen/setup');
     $form['setup_message'] = array(
       '#markup' => '<h2>' . t('Welcome to Blue-Green Deployment') . '</h2>' .
         '<p>' . t('Blue-Green deployment is not configured yet. Use the Setup tab to initialize blue-green deployment for this site.') . '</p>' .
-        '<p><a href="@setup_url" class="button button-primary">' . t('Go to Setup') . '</a></p>',
-      '#markup_variables' => array(
-        '@setup_url' => url('admin/config/development/bluegreen/setup'),
-      ),
+        '<p><a href="' . $setup_url . '" class="button button-primary">' . t('Go to Setup') . '</a></p>',
     );
     return $form;
   }
@@ -58,10 +56,19 @@ function bluegreen_admin_form($form, &$form_state) {
       '</div>',
   );
 
+  // Get displayable prefix value (handle both string and array)
+  $blue_prefix_display = '';
+  if (is_array($blue_info['prefix'])) {
+    $blue_prefix_display = isset($blue_info['prefix']['default']) ? $blue_info['prefix']['default'] : '';
+  }
+  else {
+    $blue_prefix_display = !empty($blue_info['prefix']) ? $blue_info['prefix'] : '';
+  }
+  
   $form['environments']['blue']['info'] = array(
     '#markup' => '<div class="environment-info">' .
       '<div class="info-line"><strong>' . t('Database:') . '</strong> ' . check_plain($blue_info['database']) . '</div>' .
-      '<div class="info-line"><strong>' . t('Prefix:') . '</strong> ' . check_plain(!empty($blue_info['prefix']) ? $blue_info['prefix'] : t('(none)')) . '</div>' .
+      '<div class="info-line"><strong>' . t('Prefix:') . '</strong> ' . ($blue_prefix_display ? check_plain($blue_prefix_display) : t('(none)')) . '</div>' .
       '<div class="info-line"><strong>' . t('Status:') . '</strong> ' . ($blue_installed ? t('Installed') : t('Not installed')) . '</div>' .
       ($blue_last_sync ? '<div class="info-line"><strong>' . t('Last synced:') . '</strong> ' . format_date($blue_last_sync, 'short') . '</div>' : '') .
       '</div>',
@@ -112,10 +119,19 @@ function bluegreen_admin_form($form, &$form_state) {
       '</div>',
   );
 
+  // Get displayable prefix value (handle both string and array)
+  $green_prefix_display = '';
+  if (is_array($green_info['prefix'])) {
+    $green_prefix_display = isset($green_info['prefix']['default']) ? $green_info['prefix']['default'] : '';
+  }
+  else {
+    $green_prefix_display = !empty($green_info['prefix']) ? $green_info['prefix'] : '';
+  }
+  
   $form['environments']['green']['info'] = array(
     '#markup' => '<div class="environment-info">' .
       '<div class="info-line"><strong>' . t('Database:') . '</strong> ' . check_plain($green_info['database']) . '</div>' .
-      '<div class="info-line"><strong>' . t('Prefix:') . '</strong> ' . check_plain(!empty($green_info['prefix']) ? $green_info['prefix'] : t('(none)')) . '</div>' .
+      '<div class="info-line"><strong>' . t('Prefix:') . '</strong> ' . ($green_prefix_display ? check_plain($green_prefix_display) : t('(none)')) . '</div>' .
       '<div class="info-line"><strong>' . t('Status:') . '</strong> ' . ($green_installed ? t('Installed') : t('Not installed')) . '</div>' .
       ($green_last_sync ? '<div class="info-line"><strong>' . t('Last synced:') . '</strong> ' . format_date($green_last_sync, 'short') . '</div>' : '') .
       '</div>',
@@ -289,8 +305,8 @@ function bluegreen_switch_submit($form, &$form_state) {
     backdrop_set_message(t('The @env environment is now live. All visitors will see content from the @env database tables.', 
       array('@env' => $new)), 'status');
     
-    // Stay on the bluegreen page to show the updated status
-    $form_state['redirect'] = 'admin/config/development/bluegreen';
+    // Redirect to cache clear page first, then to admin page
+    $form_state['redirect'] = 'admin/config/development/bluegreen/clear-cache';
   }
   catch (Exception $e) {
     backdrop_set_message(t('Error switching environments: @message', 
@@ -326,16 +342,28 @@ function bluegreen_sync_database($from, $to) {
     throw new Exception(t('No tables found in source environment.'));
   }
 
-  // Drop all existing tables in target environment
+  // Get list of shared tables to exclude from sync
+  $shared_tables = bluegreen_get_shared_tables();
+
+  // Drop all existing tables in target environment (except shared tables)
   $target_tables = db_find_tables($to_prefix . '%');
   foreach ($target_tables as $table) {
-    db_query("DROP TABLE IF EXISTS {$table}");
+    $base_name = substr($table, strlen($to_prefix));
+    if (!in_array($base_name, $shared_tables)) {
+      db_query("DROP TABLE IF EXISTS {$table}");
+    }
   }
 
-  // Copy each table from source to target
+  // Copy each table from source to target (except shared tables)
   foreach ($source_tables as $source_table) {
     // Determine target table name by replacing prefix
     $base_name = substr($source_table, strlen($from_prefix));
+    
+    // Skip shared tables
+    if (in_array($base_name, $shared_tables)) {
+      continue;
+    }
+    
     $target_table = $to_prefix . $base_name;
     
     // Create table structure
@@ -432,17 +460,32 @@ function bluegreen_switch_environment($new_environment) {
   $settings_content = file_get_contents($settings_file);
   $original_content = $settings_content;
   
-  // Record the current prefix
-  $old_prefix = isset($databases['default']['default']['prefix']) ? $databases['default']['default']['prefix'] : '';
-  $new_prefix = $env_info['prefix'];
+  // Get the old and new prefix values
+  // With the new shared tables system, prefix is an array
+  $old_prefix_default = is_array($databases['default']['default']['prefix']) 
+    ? $databases['default']['default']['prefix']['default'] 
+    : $databases['default']['default']['prefix'];
+  $new_prefix_default = is_array($env_info['prefix']) 
+    ? $env_info['prefix']['default'] 
+    : $env_info['prefix'];
   
-  // Use simple string replacement instead of regex
-  // Build the search and replace strings
-  $search = "\$databases['default']['default']['prefix'] = '" . $old_prefix . "';";
-  $replace = "\$databases['default']['default']['prefix'] = '" . $new_prefix . "';";
+  // Build the new prefix configuration based on which environment we're switching to
+  if ($new_prefix_default === '' || $new_prefix_default === 'blue') {
+    // Switching to Blue (unprefixed) - use shared table prefix only
+    $new_prefix_config = '$shared_table_prefix';
+  }
+  else {
+    // Switching to Green (alt_) - merge default with shared
+    // Note: array_merge last argument wins, so put $shared_table_prefix first
+    $new_prefix_config = "array_merge(\n  \$shared_table_prefix,\n  array('default' => '" . $new_prefix_default . "')\n)";
+  }
+  
+  // Use regex to find and replace the prefix configuration line
+  $pattern = '/(\\$databases\[\'default\'\]\[\'default\'\]\[\'prefix\'\]\s*=\s*)([^;]+)(;)/s';
+  $replacement = '$1' . $new_prefix_config . '$3';
   
   // Do the replacement
-  $settings_content = str_replace($search, $replace, $settings_content);
+  $settings_content = preg_replace($pattern, $replacement, $settings_content);
   
   // Check if replacement actually happened
   if ($settings_content === $original_content) {
@@ -459,18 +502,18 @@ function bluegreen_switch_environment($new_environment) {
   clearstatcache(TRUE, $settings_file);
   
   watchdog('bluegreen', 'Updated settings.bluegreen.php: changed prefix from @old to @new (@bytes bytes written)', 
-    array('@old' => $old_prefix, '@new' => $new_prefix, '@bytes' => $bytes_written), 
+    array('@old' => $old_prefix_default, '@new' => $new_prefix_default, '@bytes' => $bytes_written), 
     WATCHDOG_INFO);
   
   // Use state system to store the active environment
   state_set('bluegreen_active_environment', $new_environment);
-  
-  // Clear all caches
-  backdrop_flush_all_caches();
 
   // Log the switch
   watchdog('bluegreen', 'Switched environment to @env', 
     array('@env' => $new_environment), WATCHDOG_INFO);
+  
+  // Note: We don't clear caches here because the database prefix just changed
+  // and cache clearing would fail. The redirect and page load will handle cache rebuilding.
 }
 
 /**
@@ -530,6 +573,17 @@ function bluegreen_backup_environment_callback($environment) {
 }
 
 /**
+ * Menu callback to clear cache after environment switch.
+ */
+function bluegreen_clear_cache_callback() {
+  // Clear all caches now that the new database prefix is active
+  backdrop_flush_all_caches();
+  
+  backdrop_set_message(t('Cache cleared for new environment.'), 'status');
+  backdrop_goto('admin/config/development/bluegreen');
+}
+
+/**
  * Form builder for blue-green deployment setup.
  */
 function bluegreen_setup_form($form, &$form_state) {
@@ -538,7 +592,7 @@ function bluegreen_setup_form($form, &$form_state) {
   // Check if already configured
   if (bluegreen_is_configured()) {
     $form['message'] = array(
-      '#markup' => '<p>' . t('This site is already configured for blue-green deployment. Use the Overview tab to monitor or switch environments.') . '</p>',
+      '#markup' => '<p>' . t('This site is configured for blue-green deployment. Use the Overview tab to monitor or switch environments.') . '</p>',
     );
     return $form;
   }
@@ -551,10 +605,11 @@ function bluegreen_setup_form($form, &$form_state) {
     '#markup' => '<h2>' . t('Set Up Blue-Green Deployment') . '</h2>' .
       '<p>' . t('This wizard will configure your site for blue-green deployment by:') . '</p>' .
       '<ol>' .
-      '<li>' . t('Duplicating your current database tables with blue_ and green_ prefixes') . '</li>' .
-      '<li>' . t('Updating settings.php with environment configurations') . '</li>' .
+      '<li>' . t('Duplicating your current database tables with alt_ prefix (for green environment)') . '</li>' .
+      '<li>' . t('Creating settings.bluegreen.php with environment configurations') . '</li>' .
       '<li>' . t('Setting up the state tracking system') . '</li>' .
-      '</ol>',
+      '</ol>' .
+      '<p>' . t('<strong>Note:</strong> Blue environment = unprefixed tables (current), Green environment = alt_ prefixed tables (alternate)') . '</p>',
   );
   
   $form['current_info'] = array(
@@ -592,8 +647,8 @@ function bluegreen_setup_form($form, &$form_state) {
     '#markup' => '<div class="messages warning">' .
       t('<strong>Important:</strong> This process will:') .
       '<ul>' .
-      '<li>' . t('Create duplicate tables (may take several minutes for large databases)') . '</li>' .
-      '<li>' . t('Modify your settings.php file (please ensure it is writable)') . '</li>' .
+      '<li>' . t('Create duplicate tables with alt_ prefix (may take several minutes for large databases)') . '</li>' .
+      '<li>' . t('Create settings.bluegreen.php and modify settings.php to include it') . '</li>' .
       '<li>' . t('This action cannot be easily undone') . '</li>' .
       '</ul>' .
       '</div>',
@@ -660,30 +715,34 @@ function bluegreen_setup_duplicate_tables($initial_active, &$context) {
   $tables = $context['sandbox']['tables'];
   $current_prefix = $context['sandbox']['current_prefix'];
   $initial_active = $context['sandbox']['initial_active'];
-  $idle = ($initial_active === 'blue') ? 'green' : 'blue';
   
   // Process up to 10 tables per batch
   $limit = min(10, $context['sandbox']['max'] - $context['sandbox']['progress']);
   $tables_to_process = array_slice($tables, $context['sandbox']['progress'], $limit);
+  
+  // Get list of shared tables that should NOT be duplicated
+  $shared_tables = bluegreen_get_shared_tables();
   
   foreach ($tables_to_process as $table) {
     try {
       // Determine the base table name (without current prefix)
       $base_name = $current_prefix ? substr($table, strlen($current_prefix)) : $table;
       
-      // Create table names for both environments
-      $active_table = $current_prefix . $initial_active . '_' . $base_name;
-      $idle_table = $current_prefix . $idle . '_' . $base_name;
+      // Skip shared tables - they should exist only once
+      if (in_array($base_name, $shared_tables)) {
+        $context['sandbox']['progress']++;
+        continue;
+      }
       
-      // Copy to active environment table
-      db_query("CREATE TABLE {$active_table} LIKE {$table}");
-      db_query("INSERT INTO {$active_table} SELECT * FROM {$table}");
+      // Create alt_ prefixed tables for the green/alternate environment
+      // Blue environment will use the original unprefixed tables
+      $alt_table = 'alt_' . $base_name;
       
-      // Copy to idle environment table
-      db_query("CREATE TABLE {$idle_table} LIKE {$table}");
-      db_query("INSERT INTO {$idle_table} SELECT * FROM {$table}");
+      // Copy to alternate (green) environment
+      db_query("CREATE TABLE {$alt_table} LIKE {$table}");
+      db_query("INSERT INTO {$alt_table} SELECT * FROM {$table}");
       
-      $context['results']['tables_created'] += 2;
+      $context['results']['tables_created']++;
     }
     catch (Exception $e) {
       backdrop_set_message(t('Error copying table @table: @message', array(
@@ -706,49 +765,119 @@ function bluegreen_setup_duplicate_tables($initial_active, &$context) {
 }
 
 /**
- * Batch operation: Write settings.php configuration.
+ * Batch operation: Write settings.bluegreen.php configuration.
  */
 function bluegreen_setup_write_settings($initial_active, &$context) {
-  global $databases;
+  // Create settings.bluegreen.php file with blue-green configuration
+  $settings_content = <<<'PHP'
+<?php
+/**
+ * @file
+ * Blue-Green Deployment database configuration.
+ * 
+ * This file is automatically generated and managed by the bluegreen module.
+ * Do not edit manually - use the bluegreen admin interface instead.
+ */
+
+// Convert DDEV's $database (singular) to $databases array format if needed
+if (isset($database) && is_string($database)) {
+  // Parse DDEV's database URL format: mysql://user:pass@host:port/dbname
+  $db_url = parse_url($database);
+  $base_config = array(
+    'driver' => $db_url['scheme'],
+    'database' => ltrim($db_url['path'], '/'),
+    'username' => $db_url['user'],
+    'password' => $db_url['pass'],
+    'host' => $db_url['host'],
+    'port' => isset($db_url['port']) ? $db_url['port'] : 3306,
+    'charset' => 'utf8mb4',
+    'collation' => 'utf8mb4_general_ci',
+  );
+  unset($database); // Remove to prevent Backdrop from using it
+}
+else {
+  // Fallback for production (manual configuration)
+  $base_config = array(
+    'driver' => 'mysql',
+    'database' => 'db',
+    'username' => 'db',
+    'password' => 'db',
+    'host' => 'db',
+    'port' => 3306,
+    'charset' => 'utf8mb4',
+    'collation' => 'utf8mb4_general_ci',
+  );
+}
+
+// Shared tables that should always use unprefixed versions
+$shared_table_prefix = array(
+  'default' => '',
+  'state' => '',
+  'watchdog' => '',
+  'users' => '',
+  'users_roles' => '',
+  'role' => '',
+  'role_permission' => '',
+  'authmap' => '',
+  'sessions' => '',
+);
+
+// Set up Blue environment (unprefixed tables - the original/live)
+$databases['blue']['default'] = $base_config;
+$databases['blue']['default']['prefix'] = $shared_table_prefix;
+
+// Set up Green environment (alt_ prefixed tables - the alternate/dev)
+$databases['green']['default'] = $base_config;
+$databases['green']['default']['prefix'] = array_merge(
+  $shared_table_prefix,
+  array('default' => 'alt_')
+);
+
+// Set up default database to point to active environment
+// This prefix is dynamically updated by the bluegreen module when switching
+$databases['default']['default'] = $base_config;
+$databases['default']['default']['prefix'] = $shared_table_prefix;
+
+PHP;
   
-  $current_db = $databases['default']['default'];
-  $current_prefix = !empty($current_db['prefix']) ? $current_db['prefix'] : '';
-  
-  // Build database configurations
-  $blue_config = $current_db;
-  $blue_config['prefix'] = $current_prefix . 'blue_';
-  $blue_config['driver'] = !empty($current_db['driver']) ? $current_db['driver'] : 'mysql';
-  
-  $green_config = $current_db;
-  $green_config['prefix'] = $current_prefix . 'green_';
-  $green_config['driver'] = !empty($current_db['driver']) ? $current_db['driver'] : 'mysql';
-  
-  // Update default to point to active environment
-  $default_config = $current_db;
-  $default_config['prefix'] = $current_prefix . $initial_active . '_';
-  $default_config['driver'] = !empty($current_db['driver']) ? $current_db['driver'] : 'mysql';
-  
-  // Load install.inc for backdrop_rewrite_settings()
-  require_once BACKDROP_ROOT . '/core/includes/install.inc';
+  $settings_file = BACKDROP_ROOT . '/settings.bluegreen.php';
   
   try {
-    backdrop_rewrite_settings(array(
-      'databases' => array(
-        'value' => array(
-          'default' => array('default' => $default_config),
-          'blue' => array('default' => $blue_config),
-          'green' => array('default' => $green_config),
-        ),
-        'required' => TRUE,
-      ),
-    ));
+    $bytes_written = file_put_contents($settings_file, $settings_content);
+    if ($bytes_written === FALSE) {
+      throw new Exception(t('Could not write settings.bluegreen.php'));
+    }
+    
+    // Also add the include statement to settings.php if not already present
+    $settings_php = BACKDROP_ROOT . '/settings.php';
+    $settings_php_content = file_get_contents($settings_php);
+    
+    if (strpos($settings_php_content, 'settings.bluegreen.php') === FALSE) {
+      // Add the include after DDEV settings
+      $include_code = "\n// Blue-Green Deployment Configuration\n// Managed by the bluegreen module\n\$bluegreen_settings = __DIR__ . '/settings.bluegreen.php';\nif (is_readable(\$bluegreen_settings)) {\n  require \$bluegreen_settings;\n}\n";
+      
+      // Find the end of the DDEV include section and add after it
+      if (strpos($settings_php_content, 'settings.ddev.php') !== FALSE) {
+        $settings_php_content = preg_replace(
+          '/(require \$ddev_settings;\s*})/s',
+          '$1' . $include_code,
+          $settings_php_content
+        );
+      }
+      else {
+        // No DDEV, add at the end
+        $settings_php_content .= $include_code;
+      }
+      
+      file_put_contents($settings_php, $settings_php_content);
+    }
     
     $context['results']['settings_written'] = TRUE;
-    $context['message'] = t('Updated settings.php');
+    $context['message'] = t('Created settings.bluegreen.php');
   }
   catch (Exception $e) {
     $context['results']['settings_error'] = $e->getMessage();
-    backdrop_set_message(t('Error writing settings.php: @message', array('@message' => $e->getMessage())), 'error');
+    backdrop_set_message(t('Error writing settings file: @message', array('@message' => $e->getMessage())), 'error');
   }
 }
 

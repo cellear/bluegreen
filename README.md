@@ -4,64 +4,68 @@ Provides blue-green deployment functionality for Backdrop CMS, enabling easy sit
 
 ## Features
 
-- **Dual Database Environments**: Manage separate Blue and Green database environments
+- **Dual Database Environments**: Manage separate Blue and Green database environments using efficient 2-table architecture
 - **One-Click Switching**: Switch between environments with a single button click
 - **Database Sync**: Sync database content from live to dev environment
 - **Visual Interface**: Clean, intuitive admin UI showing environment status
 - **Backup Support**: Create backups before switching environments
 - **Safe Deployment**: Make changes on idle environment, test, then switch live
 
+## Architecture
+
+The module uses a simple 2-table architecture with shared tables:
+
+### Environment Tables
+- **Blue environment**: Uses unprefixed tables (the original installation)
+- **Green environment**: Uses `alt_` prefixed tables (duplicate for testing)
+
+### Shared Tables
+These tables are NOT duplicated and remain shared across both environments:
+- `state` - System configuration and tracking
+- `watchdog` - Log entries (single audit trail)
+- `users` - User accounts (prevents password rollbacks)
+- `users_roles`, `role`, `role_permission` - User permissions
+- `authmap` - External authentication
+- `sessions` - Active sessions (keeps users logged in)
+
+This design minimizes database size while ensuring critical data persists across environment switches.
+
 ## Requirements
 
-- Both Blue and Green database configurations must be defined in `settings.php`
-- The `$bluegreen_active_environment` variable must be set in `settings.php`
+- Backdrop CMS 1.x installation
+- Write permissions on the site's root directory (for creating `settings.bluegreen.php`)
 
 ## Installation
 
-1. Enable the module at `admin/modules`
-2. Grant permissions at `admin/people/permissions` (search for "blue-green")
-3. Visit `admin/config/development/bluegreen` to manage environments
+1. Copy the module to `modules/bluegreen/`
+2. Enable the module at `admin/modules`
+3. Grant permissions at `admin/people/permissions` (search for "blue-green")
+4. Visit `admin/config/development/bluegreen` and run the Setup wizard
+5. The wizard will automatically create duplicate tables and configure your environments
 
 ## Configuration
 
-The module requires database configurations to be set during Backdrop installation using the modified installer, or manually in `settings.php`.
+The module automatically creates and manages `settings.bluegreen.php` in your site root. This file contains the database configurations for both environments and is automatically included by `settings.php`.
 
-### Important: Driver Field Required
+### Automatic Configuration
 
-**Each database configuration MUST include a `'driver'` field** to prevent PHP warnings. The Backdrop installer may omit this field for MySQL databases. You must add it manually:
-
-```php
-$databases = array(
-  'blue' => array(
-    'default' => array(
-      'database' => 'db',
-      'username' => 'db',
-      'password' => 'db',
-      'host' => 'localhost',
-      'driver' => 'mysql',  // REQUIRED - prevents warnings
-      'prefix' => 'blue_',
-    ),
-  ),
-  'green' => array(
-    'default' => array(
-      'database' => 'db',
-      'username' => 'db',
-      'password' => 'db',
-      'host' => 'localhost',
-      'driver' => 'mysql',  // REQUIRED - prevents warnings
-      'prefix' => 'green_',
-    ),
-  ),
-);
-```
-
-You'll also need to ensure `$databases['default']` includes the driver field:
+The Setup wizard automatically creates `settings.bluegreen.php` with the following structure:
 
 ```php
-$databases['default']['default']['driver'] = 'mysql';
+// Blue environment (unprefixed tables)
+$databases['blue']['default'] = $base_config;
+$databases['blue']['default']['prefix'] = '';
+
+// Green environment (alt_ prefixed tables)
+$databases['green']['default'] = $base_config;
+$databases['green']['default']['prefix'] = 'alt_';
+
+// Active environment (dynamically updated when switching)
+$databases['default']['default'] = $base_config;
+$databases['default']['default']['prefix'] = ''; // or 'alt_' when green is active
 ```
 
-**Why?** Without the `'driver'` field, Backdrop assumes the configuration is an array of multiple database servers (for load balancing) and generates "Undefined array key" warnings when trying to select one randomly.
+The module handles all database credentials automatically, whether you're using DDEV, manual configuration, or other hosting environments.
 
 ## Usage
 
@@ -83,6 +87,9 @@ $databases['default']['default']['driver'] = 'mysql';
 - Integrates with core backup module for pre-switch backups
 - Tracks last sync time for each environment
 - Validates environment configuration on runtime
+- Blue environment: unprefixed tables (original installation)
+- Green environment: `alt_` prefixed tables (alternate copy)
+- Settings managed in `settings.bluegreen.php` (auto-generated)
 
 ## Workflow Example
 

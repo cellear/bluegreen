@@ -839,10 +839,48 @@ $databases['green']['default']['prefix'] = array_merge(
   array('default' => 'alt_')
 );
 
-// Set up default database to point to active environment
-// This prefix is dynamically updated by the bluegreen module when switching
+// Domain-based routing for dual-domain support
+// Determine which environment to show based on the accessed domain
+$accessed_domain = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '';
+$is_dev_domain = (strpos($accessed_domain, 'dev.') === 0);
+
+// Get the active environment from state (via direct DB query to avoid bootstrap issues)
+$active_env = 'blue'; // default
+try {
+  $pdo = new PDO(
+    $base_config['driver'] . ':host=' . $base_config['host'] . ';port=' . $base_config['port'] . ';dbname=' . $base_config['database'],
+    $base_config['username'],
+    $base_config['password']
+  );
+  $stmt = $pdo->query("SELECT value FROM state WHERE name = 'bluegreen_active_environment'");
+  if ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+    $active_env = unserialize($row['value']);
+  }
+} catch (Exception $e) {
+  // If we can't read from DB, default to blue
+}
+
+// Determine which environment to show
+// Main domain: show LIVE (active) environment
+// Dev domain: show DEV (inactive) environment
+if ($is_dev_domain) {
+  // Dev domain shows the OPPOSITE of active (the idle/dev environment)
+  $show_env = ($active_env === 'blue') ? 'green' : 'blue';
+} else {
+  // Main domain shows the active (live) environment
+  $show_env = $active_env;
+}
+
+// Set up default database to point to the determined environment
 $databases['default']['default'] = $base_config;
-$databases['default']['default']['prefix'] = $shared_table_prefix;
+if ($show_env === 'green') {
+  $databases['default']['default']['prefix'] = array_merge(
+    $shared_table_prefix,
+    array('default' => 'alt_')
+  );
+} else {
+  $databases['default']['default']['prefix'] = $shared_table_prefix;
+}
 
 PHP;
   

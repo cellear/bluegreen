@@ -130,8 +130,17 @@ function bluegreen_get_environment_info($environment) {
  *   TRUE if both blue and green databases are configured.
  */
 function bluegreen_is_configured() {
-  return (bluegreen_get_environment_info('blue') !== FALSE && 
-          bluegreen_get_environment_info('green') !== FALSE);
+  $blue_configured = bluegreen_get_environment_info('blue') !== FALSE;
+  $green_configured = bluegreen_get_environment_info('green') !== FALSE;
+
+  if (!$blue_configured || !$green_configured) {
+    return FALSE;
+  }
+
+  // Both environments must actually have table sets before we consider the
+  // module configured. This avoids flagging success when setup never cloned.
+  return (bluegreen_environment_is_installed('blue') &&
+          bluegreen_environment_is_installed('green'));
 }
 
 /**
@@ -292,4 +301,3 @@ function bluegreen_admin_bar_output_build(&$content) {
   // Add CSS for styling
   backdrop_add_css(backdrop_get_path('module', 'bluegreen') . '/css/bluegreen.admin.css');
 }
-

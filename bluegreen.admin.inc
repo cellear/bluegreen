@@ -423,21 +423,43 @@ function bluegreen_switch_environment($new_environment) {
     throw new Exception(t('Could not get configuration for @env environment.', array('@env' => $new_environment)));
   }
   
-  // Record the current prefix before updating settings.php.
+  // Update settings.bluegreen.php to change the active prefix
+  $settings_file = BACKDROP_ROOT . '/settings.bluegreen.php';
+  if (!file_exists($settings_file)) {
+    throw new Exception(t('Blue-Green settings file not found. Please run the setup wizard first.'));
+  }
+  
+  $settings_content = file_get_contents($settings_file);
+  $original_content = $settings_content;
+  
+  // Record the current prefix
   $old_prefix = isset($databases['default']['default']['prefix']) ? $databases['default']['default']['prefix'] : '';
   $new_prefix = $env_info['prefix'];
-
-  // Use Backdrop's helper to rewrite settings.php instead of manual regex.
-  require_once BACKDROP_ROOT . '/core/includes/install.inc';
-  backdrop_rewrite_settings(array(
-    "databases['default']['default']['prefix']" => array(
-      'value' => $new_prefix,
-      'required' => TRUE,
-    ),
-  ));
   
-  watchdog('bluegreen', 'Updated settings.php: changed prefix from @old to @new', 
-    array('@old' => $old_prefix, '@new' => $new_prefix), 
+  // Use simple string replacement instead of regex
+  // Build the search and replace strings
+  $search = "\$databases['default']['default']['prefix'] = '" . $old_prefix . "';";
+  $replace = "\$databases['default']['default']['prefix'] = '" . $new_prefix . "';";
+  
+  // Do the replacement
+  $settings_content = str_replace($search, $replace, $settings_content);
+  
+  // Check if replacement actually happened
+  if ($settings_content === $original_content) {
+    throw new Exception(t('Failed to update prefix in settings.bluegreen.php. Could not find the line to update.'));
+  }
+  
+  // Write back to file
+  $bytes_written = file_put_contents($settings_file, $settings_content);
+  if ($bytes_written === FALSE) {
+    throw new Exception(t('Could not write to settings.bluegreen.php. Please check file permissions.'));
+  }
+  
+  // Ensure file was written
+  clearstatcache(TRUE, $settings_file);
+  
+  watchdog('bluegreen', 'Updated settings.bluegreen.php: changed prefix from @old to @new (@bytes bytes written)', 
+    array('@old' => $old_prefix, '@new' => $new_prefix, '@bytes' => $bytes_written), 
     WATCHDOG_INFO);
   
   // Use state system to store the active environment
@@ -515,9 +537,8 @@ function bluegreen_setup_form($form, &$form_state) {
   
   // Check if already configured
   if (bluegreen_is_configured()) {
-    backdrop_set_message(t('Blue-Green deployment is already configured. Use the Overview page to manage environments.'), 'warning');
     $form['message'] = array(
-      '#markup' => '<p>' . t('This site is already configured for blue-green deployment.') . '</p>',
+      '#markup' => '<p>' . t('This site is already configured for blue-green deployment. Use the Overview tab to monitor or switch environments.') . '</p>',
     );
     return $form;
   }

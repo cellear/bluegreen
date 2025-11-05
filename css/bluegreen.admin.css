@@ -75,6 +75,20 @@
   background-color: white;
 }
 
+.dev-link {
+  color: white;
+  text-decoration: underline;
+  font-weight: 600;
+  margin-left: 0.5rem;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.dev-link:hover {
+  color: #f0f0f0;
+  text-decoration: none;
+}
+
 .environment-info {
   margin: 1rem 0;
   padding: 1rem;

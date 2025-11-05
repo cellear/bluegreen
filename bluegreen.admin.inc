@@ -11,7 +11,7 @@ function bluegreen_admin_form($form, &$form_state) {
   // Check if blue-green is configured
   if (!bluegreen_is_configured()) {
     backdrop_set_message(t('Blue-Green deployment has not been set up yet.'), 'warning');
-    $setup_url = url('admin/config/development/bluegreen/setup');
+    $setup_url = url('admin/content/bluegreen/setup');
     $form['setup_message'] = array(
       '#markup' => '<h2>' . t('Welcome to Blue-Green Deployment') . '</h2>' .
         '<p>' . t('Blue-Green deployment is not configured yet. Use the Setup tab to initialize blue-green deployment for this site.') . '</p>' .
@@ -22,15 +22,36 @@ function bluegreen_admin_form($form, &$form_state) {
 
   $active = bluegreen_get_active_environment();
   $idle = bluegreen_get_idle_environment();
-  
+
   $blue_info = bluegreen_get_environment_info('blue');
   $green_info = bluegreen_get_environment_info('green');
-  
+
   $blue_installed = bluegreen_environment_is_installed('blue');
   $green_installed = bluegreen_environment_is_installed('green');
-  
+
   $blue_last_sync = bluegreen_get_last_sync('blue');
   $green_last_sync = bluegreen_get_last_sync('green');
+
+  // Build dev domain URL for idle environment
+  $dev_url = '';
+  if (isset($_SERVER['HTTP_HOST'])) {
+    $current_host = $_SERVER['HTTP_HOST'];
+    $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
+
+    // If we're on the main domain, dev URL is dev.domain
+    // If we're on dev.domain, main URL is just domain
+    if (strpos($current_host, 'dev.') === 0) {
+      // Currently on dev domain, so main URL is without "dev."
+      $main_host = substr($current_host, 4);
+      $live_url = $protocol . '://' . $main_host;
+      $dev_url = $protocol . '://' . $current_host;
+    }
+    else {
+      // Currently on main domain, so dev URL is with "dev."
+      $dev_url = $protocol . '://dev.' . $current_host;
+      $live_url = $protocol . '://' . $current_host;
+    }
+  }
 
   $form['#tree'] = TRUE;
 
@@ -49,11 +70,19 @@ function bluegreen_admin_form($form, &$form_state) {
     '#markup' => '<h2>' . t('Blue Environment') . '</h2>',
   );
 
+  $blue_status_markup = '<div class="environment-status ' . ($active === 'blue' ? 'status-live' : 'status-idle') . '">' .
+    '<span class="status-indicator"></span> ' .
+    ($active === 'blue' ? t('Live') : t('Idle (Dev)'));
+
+  // Add dev URL link for idle environment
+  if ($active !== 'blue' && !empty($dev_url)) {
+    $blue_status_markup .= ' <a href="' . check_url($dev_url) . '" target="_blank" class="dev-link">' . t('Visit Dev Site') . ' →</a>';
+  }
+
+  $blue_status_markup .= '</div>';
+
   $form['environments']['blue']['status'] = array(
-    '#markup' => '<div class="environment-status ' . ($active === 'blue' ? 'status-live' : 'status-idle') . '">' .
-      '<span class="status-indicator"></span> ' .
-      ($active === 'blue' ? t('Live') : t('Idle (Dev)')) .
-      '</div>',
+    '#markup' => $blue_status_markup,
   );
 
   // Get displayable prefix value (handle both string and array)
@@ -112,11 +141,19 @@ function bluegreen_admin_form($form, &$form_state) {
     '#markup' => '<h2>' . t('Green Environment') . '</h2>',
   );
 
+  $green_status_markup = '<div class="environment-status ' . ($active === 'green' ? 'status-live' : 'status-idle') . '">' .
+    '<span class="status-indicator"></span> ' .
+    ($active === 'green' ? t('Live') : t('Idle (Dev)'));
+
+  // Add dev URL link for idle environment
+  if ($active !== 'green' && !empty($dev_url)) {
+    $green_status_markup .= ' <a href="' . check_url($dev_url) . '" target="_blank" class="dev-link">' . t('Visit Dev Site') . ' →</a>';
+  }
+
+  $green_status_markup .= '</div>';
+
   $form['environments']['green']['status'] = array(
-    '#markup' => '<div class="environment-status ' . ($active === 'green' ? 'status-live' : 'status-idle') . '">' .
-      '<span class="status-indicator"></span> ' .
-      ($active === 'green' ? t('Live') : t('Idle (Dev)')) .
-      '</div>',
+    '#markup' => $green_status_markup,
   );
 
   // Get displayable prefix value (handle both string and array)
@@ -300,13 +337,13 @@ function bluegreen_switch_submit($form, &$form_state) {
   
   try {
     bluegreen_switch_environment($new);
-    backdrop_set_message(t('Successfully switched to @env environment!', 
+    backdrop_set_message(t('Successfully switched to @env environment!',
       array('@env' => ucfirst($new))), 'status');
-    backdrop_set_message(t('The @env environment is now live. All visitors will see content from the @env database tables.', 
+    backdrop_set_message(t('The @env environment is now live. All visitors will see content from the @env database tables.',
       array('@env' => $new)), 'status');
-    
+
     // Redirect to cache clear page first, then to admin page
-    $form_state['redirect'] = 'admin/config/development/bluegreen/clear-cache';
+    $form_state['redirect'] = 'admin/content/bluegreen/clear-cache';
   }
   catch (Exception $e) {
     backdrop_set_message(t('Error switching environments: @message', 
@@ -529,7 +566,7 @@ function bluegreen_switch_environment_callback($environment) {
     backdrop_set_message(t('Error: @message', array('@message' => $e->getMessage())), 'error');
   }
   
-  backdrop_goto('admin/config/development/bluegreen');
+  backdrop_goto('admin/content/bluegreen');
 }
 
 /**
@@ -546,7 +583,7 @@ function bluegreen_sync_environment_callback($from, $to) {
     backdrop_set_message(t('Error: @message', array('@message' => $e->getMessage())), 'error');
   }
   
-  backdrop_goto('admin/config/development/bluegreen');
+  backdrop_goto('admin/content/bluegreen');
 }
 
 /**
@@ -569,7 +606,7 @@ function bluegreen_backup_environment_callback($environment) {
     backdrop_set_message(t('Error: @message', array('@message' => $e->getMessage())), 'error');
   }
   
-  backdrop_goto('admin/config/development/bluegreen');
+  backdrop_goto('admin/content/bluegreen');
 }
 
 /**
@@ -586,7 +623,7 @@ function bluegreen_clear_cache_callback() {
   backdrop_flush_all_caches();
   
   backdrop_set_message(t('Cache cleared for new environment.'), 'status');
-  backdrop_goto('admin/config/development/bluegreen');
+  backdrop_goto('admin/content/bluegreen');
 }
 
 /**

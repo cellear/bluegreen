@@ -649,10 +649,11 @@ function bluegreen_setup_form($form, &$form_state) {
       '<p>' . t('This wizard will configure your site for blue-green deployment by:') . '</p>' .
       '<ol>' .
       '<li>' . t('Duplicating your current database tables with alt_ prefix (for green environment)') . '</li>' .
+      '<li>' . t('Creating alternate config directory (config_[hash]_alt) with copies of all configuration files') . '</li>' .
       '<li>' . t('Creating settings.bluegreen.php with environment configurations') . '</li>' .
       '<li>' . t('Setting up the state tracking system') . '</li>' .
       '</ol>' .
-      '<p>' . t('<strong>Note:</strong> Blue environment = unprefixed tables (current), Green environment = alt_ prefixed tables (alternate)') . '</p>',
+      '<p>' . t('<strong>Note:</strong> Blue environment = unprefixed tables + standard config directory, Green environment = alt_ prefixed tables + _alt config directory') . '</p>',
   );
   
   $form['current_info'] = array(
@@ -718,18 +719,19 @@ function bluegreen_setup_form($form, &$form_state) {
 function bluegreen_setup_form_submit($form, &$form_state) {
   $initial_active = $form_state['values']['initial_active'];
   
-  // Use batch API for table duplication
+  // Use batch API for table duplication and config setup
   $batch = array(
     'title' => t('Setting up Blue-Green Deployment'),
     'operations' => array(
       array('bluegreen_setup_duplicate_tables', array($initial_active)),
+      array('bluegreen_setup_create_config_directories', array($initial_active)),
       array('bluegreen_setup_write_settings', array($initial_active)),
       array('bluegreen_setup_finalize', array($initial_active)),
     ),
     'finished' => 'bluegreen_setup_finished',
     'file' => backdrop_get_path('module', 'bluegreen') . '/bluegreen.admin.inc',
   );
-  
+
   batch_set($batch);
 }
 
@@ -804,6 +806,36 @@ function bluegreen_setup_duplicate_tables($initial_active, &$context) {
   
   if ($context['sandbox']['progress'] < $context['sandbox']['max']) {
     $context['finished'] = $context['sandbox']['progress'] / $context['sandbox']['max'];
+  }
+}
+
+/**
+ * Batch operation: Create alternate config directories for green environment.
+ */
+function bluegreen_setup_create_config_directories($initial_active, &$context) {
+  try {
+    // Call the helper function to create and populate the alternate config directory
+    bluegreen_create_alt_config_directory();
+
+    // Count config files in both environments for reporting
+    $blue_active_count = bluegreen_count_config_files('blue', 'active');
+    $blue_staging_count = bluegreen_count_config_files('blue', 'staging');
+    $green_active_count = bluegreen_count_config_files('green', 'active');
+    $green_staging_count = bluegreen_count_config_files('green', 'staging');
+
+    $context['results']['config_blue_active'] = $blue_active_count;
+    $context['results']['config_blue_staging'] = $blue_staging_count;
+    $context['results']['config_green_active'] = $green_active_count;
+    $context['results']['config_green_staging'] = $green_staging_count;
+    $context['results']['config_created'] = TRUE;
+
+    $context['message'] = t('Created alternate config directories with @count files', array(
+      '@count' => $green_active_count + $green_staging_count,
+    ));
+  }
+  catch (Exception $e) {
+    $context['results']['config_error'] = $e->getMessage();
+    backdrop_set_message(t('Error creating config directories: @message', array('@message' => $e->getMessage())), 'error');
   }
 }
 
@@ -919,6 +951,32 @@ if ($show_env === 'green') {
   $databases['default']['default']['prefix'] = $shared_table_prefix;
 }
 
+// Config directory routing
+// Each environment gets its own config directory for true isolation
+$config_base_dir = 'files/config_' . md5('backdrop_config');
+
+// Detect actual config directory (may vary by installation)
+if (is_dir('files')) {
+  $files_dirs = scandir('files');
+  foreach ($files_dirs as $dir) {
+    if (strpos($dir, 'config_') === 0 && $dir !== '.' && $dir !== '..') {
+      $config_base_dir = 'files/' . $dir;
+      break;
+    }
+  }
+}
+
+// Set config directory based on which environment we're showing
+if ($show_env === 'green') {
+  // Green environment uses _alt config directory
+  $config_directories['active'] = $config_base_dir . '_alt/active';
+  $config_directories['staging'] = $config_base_dir . '_alt/staging';
+} else {
+  // Blue environment uses standard config directory
+  $config_directories['active'] = $config_base_dir . '/active';
+  $config_directories['staging'] = $config_base_dir . '/staging';
+}
+
 PHP;
   
   $settings_file = BACKDROP_ROOT . '/settings.bluegreen.php';
@@ -985,6 +1043,15 @@ function bluegreen_setup_finished($success, $results, $operations) {
     backdrop_set_message(t('Created @count tables across both environments.', array(
       '@count' => $results['tables_created'],
     )));
+
+    // Show config directory information if available
+    if (!empty($results['config_created'])) {
+      $config_total = $results['config_green_active'] + $results['config_green_staging'];
+      backdrop_set_message(t('Created alternate config directory with @count configuration files.', array(
+        '@count' => $config_total,
+      )));
+    }
+
     backdrop_set_message(t('Active environment: @env', array(
       '@env' => $results['active_environment'],
     )));

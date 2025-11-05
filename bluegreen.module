@@ -13,7 +13,7 @@
 function bluegreen_menu() {
   $items = array();
 
-  $items['admin/config/development/bluegreen'] = array(
+  $items['admin/content/bluegreen'] = array(
     'title' => 'Blue-Green Deployment',
     'description' => 'Manage Blue and Green database environments for deployment.',
     'page callback' => 'backdrop_get_form',
@@ -23,13 +23,13 @@ function bluegreen_menu() {
     'type' => MENU_NORMAL_ITEM,
   );
 
-  $items['admin/config/development/bluegreen/overview'] = array(
+  $items['admin/content/bluegreen/overview'] = array(
     'title' => 'Overview',
     'type' => MENU_DEFAULT_LOCAL_TASK,
     'weight' => -10,
   );
 
-  $items['admin/config/development/bluegreen/setup'] = array(
+  $items['admin/content/bluegreen/setup'] = array(
     'title' => 'Setup',
     'description' => 'Set up Blue-Green deployment for this site.',
     'page callback' => 'backdrop_get_form',
@@ -40,34 +40,34 @@ function bluegreen_menu() {
     'weight' => 10,
   );
 
-  $items['admin/config/development/bluegreen/switch/%'] = array(
+  $items['admin/content/bluegreen/switch/%'] = array(
     'title' => 'Switch Environment',
     'page callback' => 'bluegreen_switch_environment_callback',
-    'page arguments' => array(5),
+    'page arguments' => array(4),
     'access arguments' => array('switch environments'),
     'file' => 'bluegreen.admin.inc',
     'type' => MENU_CALLBACK,
   );
 
-  $items['admin/config/development/bluegreen/sync/%/%'] = array(
+  $items['admin/content/bluegreen/sync/%/%'] = array(
     'title' => 'Sync Environment',
     'page callback' => 'bluegreen_sync_environment_callback',
-    'page arguments' => array(5, 6),
+    'page arguments' => array(4, 5),
     'access arguments' => array('sync environments'),
     'file' => 'bluegreen.admin.inc',
     'type' => MENU_CALLBACK,
   );
 
-  $items['admin/config/development/bluegreen/backup/%'] = array(
+  $items['admin/content/bluegreen/backup/%'] = array(
     'title' => 'Backup Environment',
     'page callback' => 'bluegreen_backup_environment_callback',
-    'page arguments' => array(5),
+    'page arguments' => array(4),
     'access arguments' => array('sync environments'),
     'file' => 'bluegreen.admin.inc',
     'type' => MENU_CALLBACK,
   );
 
-  $items['admin/config/development/bluegreen/clear-cache'] = array(
+  $items['admin/content/bluegreen/clear-cache'] = array(
     'title' => 'Clear Cache After Switch',
     'page callback' => 'bluegreen_clear_cache_callback',
     'access arguments' => array('switch environments'),
@@ -295,7 +295,7 @@ function bluegreen_environment_is_installed($environment) {
  */
 function bluegreen_init() {
   // Add admin CSS if on the blue-green admin page
-  if (arg(0) == 'admin' && arg(1) == 'config' && arg(2) == 'development' && arg(3) == 'bluegreen') {
+  if (arg(0) == 'admin' && arg(1) == 'content' && arg(2) == 'bluegreen') {
     backdrop_add_css(backdrop_get_path('module', 'bluegreen') . '/css/bluegreen.admin.css');
   }
 }
@@ -323,7 +323,7 @@ function bluegreen_admin_bar_output_build(&$content) {
   
   $content['environment']['indicator'] = array(
     '#title' => '<span class="environment-label">' . $color_name . '</span>',
-    '#href' => 'admin/config/development/bluegreen',
+    '#href' => 'admin/content/bluegreen',
     '#options' => array(
       'html' => TRUE,
       'attributes' => array(

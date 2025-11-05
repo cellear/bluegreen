@@ -1,11 +1,19 @@
 # DDEV Multi-Domain Configuration for Blue-Green Deployment
 
+## Quick Start
+
+**For automated setup, see [DDEV-SETUP.md](DDEV-SETUP.md)** - includes a setup script that handles everything automatically!
+
 ## Overview
-This document describes how to configure DDEV to serve both production and development domains for the Blue-Green deployment module, allowing seamless switching between environments based on the domain accessed.
+This document provides technical details about how DDEV multi-domain configuration works with the Blue-Green deployment module, allowing seamless switching between environments based on the domain accessed.
 
 ## Domain Strategy
-- **Production domain**: `bluegreen-v2.ddev.site` → routes to active environment (blue or green)
-- **Development domain**: `dev.bluegreen-v2.ddev.site` → routes to idle environment
+- **Production domain**: `{project-name}.ddev.site` → routes to active environment (blue or green)
+- **Development domain**: `dev.{project-name}.ddev.site` → routes to idle environment
+
+Example with project named "bluegreen-v4":
+- Main: `bluegreen-v4.ddev.site`
+- Dev: `dev.bluegreen-v4.ddev.site`
 
 ## DDEV Configuration
 
@@ -15,8 +23,10 @@ Add the development domain to the `additional_fqdns` setting:
 
 ```yaml
 additional_fqdns:
-  - dev.bluegreen-v2.ddev.site
+  - dev.{project-name}.ddev.site
 ```
+
+Replace `{project-name}` with your actual DDEV project name.
 
 ### 2. Restart DDEV
 

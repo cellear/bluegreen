@@ -298,10 +298,17 @@ function bluegreen_sync_batch_operation($from, $to, &$context) {
     $context['sandbox']['max'] = 1;
     $context['results']['from'] = $from;
     $context['results']['to'] = $to;
+    $context['results']['config_synced'] = 0;
   }
 
   try {
+    // Sync database tables
     bluegreen_sync_database($from, $to);
+
+    // Sync config files
+    $config_result = bluegreen_sync_config_files($from, $to);
+    $context['results']['config_synced'] = $config_result['total'];
+
     bluegreen_set_last_sync($to);
     $context['results']['success'] = TRUE;
   }
@@ -319,11 +326,17 @@ function bluegreen_sync_batch_operation($from, $to, &$context) {
  */
 function bluegreen_sync_batch_finished($success, $results, $operations) {
   if (!empty($results['success'])) {
-    backdrop_set_message(t('Successfully synced @to environment from @from.', 
-      array('@to' => $results['to'], '@from' => $results['from'])));
+    backdrop_set_message(t('Successfully synced @to environment from @from.',
+      array('@to' => ucfirst($results['to']), '@from' => ucfirst($results['from']))));
+
+    // Show config sync information if available
+    if (!empty($results['config_synced'])) {
+      backdrop_set_message(t('Synced @count configuration files.',
+        array('@count' => $results['config_synced'])));
+    }
   }
   else {
-    backdrop_set_message(t('Error syncing environments: @error', 
+    backdrop_set_message(t('Error syncing environments: @error',
       array('@error' => $results['error'])), 'error');
   }
 }
@@ -574,15 +587,27 @@ function bluegreen_switch_environment_callback($environment) {
  */
 function bluegreen_sync_environment_callback($from, $to) {
   try {
+    // Sync database tables
     bluegreen_sync_database($from, $to);
+
+    // Sync config files
+    $config_result = bluegreen_sync_config_files($from, $to);
+
     bluegreen_set_last_sync($to);
-    backdrop_set_message(t('Successfully synced @to from @from.', 
-      array('@to' => $to, '@from' => $from)));
+
+    backdrop_set_message(t('Successfully synced @to from @from.',
+      array('@to' => ucfirst($to), '@from' => ucfirst($from))));
+
+    // Show config sync count
+    if (!empty($config_result['total'])) {
+      backdrop_set_message(t('Synced @count configuration files.',
+        array('@count' => $config_result['total'])));
+    }
   }
   catch (Exception $e) {
     backdrop_set_message(t('Error: @message', array('@message' => $e->getMessage())), 'error');
   }
-  
+
   backdrop_goto('admin/content/bluegreen');
 }
 

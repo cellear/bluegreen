@@ -10,7 +10,7 @@
 // Bootstrap Backdrop
 define('BACKDROP_ROOT', getcwd());
 require_once BACKDROP_ROOT . '/core/includes/bootstrap.inc';
-backdrop_bootstrap(BACKDROP_FULL);
+backdrop_bootstrap(BACKDROP_BOOTSTRAP_FULL);
 
 // Load the bluegreen module
 module_load_include('module', 'bluegreen', 'bluegreen');

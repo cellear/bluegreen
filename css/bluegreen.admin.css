@@ -5,21 +5,22 @@
 
 .bluegreen-environments-wrapper {
   display: flex;
-  gap: 2rem;
-  margin: 2rem 0;
+  gap: 1.25rem;
+  margin: 1.25rem 0;
 }
 
 .bluegreen-environment {
   flex: 1;
   border: 2px solid #ddd;
   border-radius: 8px;
-  padding: 1.5rem;
+  padding: 1rem;
   background: #f9f9f9;
 }
 
 .bluegreen-environment h2 {
   margin-top: 0;
-  font-size: 1.5rem;
+  margin-bottom: 0.75rem;
+  font-size: 1.35rem;
   font-weight: 600;
 }
 
@@ -42,16 +43,16 @@
 .environment-status {
   display: inline-flex;
   align-items: center;
-  padding: 0.5rem 1rem;
+  padding: 0.4rem 0.85rem;
   border-radius: 20px;
   font-weight: 600;
-  margin-bottom: 1rem;
-  font-size: 1rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.95rem;
 }
 
 .environment-status .status-indicator {
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   margin-right: 0.5rem;
   display: inline-block;
@@ -80,7 +81,7 @@
   text-decoration: underline;
   font-weight: 600;
   margin-left: 0.5rem;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   white-space: nowrap;
 }
 
@@ -90,14 +91,15 @@
 }
 
 .environment-info {
-  margin: 1rem 0;
-  padding: 1rem;
+  margin: 0.75rem 0;
+  padding: 0.75rem;
   background: white;
   border-radius: 4px;
+  font-size: 0.95rem;
 }
 
 .environment-info .info-line {
-  padding: 0.5rem 0;
+  padding: 0.4rem 0;
   border-bottom: 1px solid #eee;
 }
 
@@ -109,42 +111,43 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  margin-top: 1rem;
+  margin-top: 0.75rem;
 }
 
 .environment-actions .form-submit {
   width: 100%;
-  padding: 0.75rem;
+  padding: 0.6rem;
   border-radius: 4px;
   font-weight: 600;
+  font-size: 0.95rem;
 }
 
 .bluegreen-switch-section {
   text-align: center;
-  margin: 2rem 0;
-  padding: 2rem;
+  margin: 1.5rem 0 1rem 0;
+  padding: 1.25rem;
   background: #f0f7ff;
   border-radius: 8px;
 }
 
 .bluegreen-switch-button {
-  font-size: 1.25rem;
-  padding: 1rem 2rem;
-  min-width: 300px;
+  font-size: 1.15rem;
+  padding: 0.85rem 1.75rem;
+  min-width: 280px;
 }
 
 .switch-help {
-  margin-top: 1rem;
+  margin-top: 0.75rem;
   color: #666;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
 }
 
 .bluegreen-warning {
   text-align: center;
   color: #d32f2f;
   font-weight: 600;
-  font-size: 0.95rem;
-  margin-top: 1rem;
+  font-size: 0.9rem;
+  margin-top: 0.75rem;
 }
 
 /* Responsive layout */

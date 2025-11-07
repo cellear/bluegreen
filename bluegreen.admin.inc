@@ -299,11 +299,13 @@ function bluegreen_sync_batch_operation($from, $to, &$context) {
     $context['results']['from'] = $from;
     $context['results']['to'] = $to;
     $context['results']['config_synced'] = 0;
+    $context['results']['table_count'] = 0;
   }
 
   try {
     // Sync database tables
-    bluegreen_sync_database($from, $to);
+    $table_count = bluegreen_sync_database($from, $to);
+    $context['results']['table_count'] = $table_count;
 
     // Sync config files
     $config_result = bluegreen_sync_config_files($from, $to);
@@ -326,8 +328,13 @@ function bluegreen_sync_batch_operation($from, $to, &$context) {
  */
 function bluegreen_sync_batch_finished($success, $results, $operations) {
   if (!empty($results['success'])) {
-    backdrop_set_message(t('Successfully synced @to environment from @from.',
-      array('@to' => ucfirst($results['to']), '@from' => ucfirst($results['from']))));
+    $table_count = !empty($results['table_count']) ? $results['table_count'] : 0;
+    backdrop_set_message(t('Successfully synced @count tables from @from to @to.',
+      array(
+        '@count' => $table_count,
+        '@from' => ucfirst($results['from']),
+        '@to' => ucfirst($results['to']),
+      )));
 
     // Show config sync information if available
     if (!empty($results['config_synced'])) {
@@ -372,22 +379,25 @@ function bluegreen_switch_submit($form, &$form_state) {
  * @param string $to
  *   Target environment ('blue' or 'green').
  *
+ * @return int
+ *   Number of tables synced.
+ *
  * @throws Exception
  */
 function bluegreen_sync_database($from, $to) {
   $from_info = bluegreen_get_environment_info($from);
   $to_info = bluegreen_get_environment_info($to);
-  
+
   if (!$from_info || !$to_info) {
     throw new Exception(t('Invalid environment configuration.'));
   }
 
   $from_prefix = !empty($from_info['prefix']) ? $from_info['prefix'] : '';
   $to_prefix = !empty($to_info['prefix']) ? $to_info['prefix'] : '';
-  
+
   // Get list of source tables
   $source_tables = db_find_tables($from_prefix . '%');
-  
+
   if (empty($source_tables)) {
     throw new Exception(t('No tables found in source environment.'));
   }
@@ -405,23 +415,28 @@ function bluegreen_sync_database($from, $to) {
   }
 
   // Copy each table from source to target (except shared tables)
+  $synced_count = 0;
   foreach ($source_tables as $source_table) {
     // Determine target table name by replacing prefix
     $base_name = substr($source_table, strlen($from_prefix));
-    
+
     // Skip shared tables
     if (in_array($base_name, $shared_tables)) {
       continue;
     }
-    
+
     $target_table = $to_prefix . $base_name;
-    
+
     // Create table structure
     db_query("CREATE TABLE {$target_table} LIKE {$source_table}");
-    
+
     // Copy data
     db_query("INSERT INTO {$target_table} SELECT * FROM {$source_table}");
+
+    $synced_count++;
   }
+
+  return $synced_count;
 }
 
 /**
@@ -588,15 +603,19 @@ function bluegreen_switch_environment_callback($environment) {
 function bluegreen_sync_environment_callback($from, $to) {
   try {
     // Sync database tables
-    bluegreen_sync_database($from, $to);
+    $table_count = bluegreen_sync_database($from, $to);
 
     // Sync config files
     $config_result = bluegreen_sync_config_files($from, $to);
 
     bluegreen_set_last_sync($to);
 
-    backdrop_set_message(t('Successfully synced @to from @from.',
-      array('@to' => ucfirst($to), '@from' => ucfirst($from))));
+    backdrop_set_message(t('Successfully synced @count tables from @from to @to.',
+      array(
+        '@count' => $table_count,
+        '@from' => ucfirst($from),
+        '@to' => ucfirst($to),
+      )));
 
     // Show config sync count
     if (!empty($config_result['total'])) {

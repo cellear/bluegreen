@@ -278,6 +278,30 @@ function bluegreen_get_table_count($environment) {
 }
 
 /**
+ * Get DDEV project name if DDEV is being used.
+ *
+ * @return string|false
+ *   The DDEV project name, or FALSE if not using DDEV.
+ */
+function bluegreen_get_ddev_project_name() {
+  // First check environment variable (works inside DDEV container)
+  if (!empty($_ENV['DDEV_PROJECT'])) {
+    return $_ENV['DDEV_PROJECT'];
+  }
+
+  // Check .ddev/config.yaml file
+  $ddev_config = BACKDROP_ROOT . '/.ddev/config.yaml';
+  if (file_exists($ddev_config)) {
+    $config_content = file_get_contents($ddev_config);
+    if (preg_match('/^name:\s*(.+)$/m', $config_content, $matches)) {
+      return trim($matches[1]);
+    }
+  }
+
+  return FALSE;
+}
+
+/**
  * Check if an environment has been installed (has tables).
  *
  * @param string $environment

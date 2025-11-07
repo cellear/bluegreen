@@ -1099,6 +1099,16 @@ function bluegreen_setup_finished($success, $results, $operations) {
     backdrop_set_message(t('Active environment: @env', array(
       '@env' => $results['active_environment'],
     )));
+
+    // Show DDEV instructions if DDEV is detected
+    $ddev_project_name = bluegreen_get_ddev_project_name();
+    if ($ddev_project_name) {
+      $ddev_command = './modules/bluegreen/setup-ddev.sh ' . $ddev_project_name;
+      backdrop_set_message(t('<strong>DDEV Instructions:</strong><br/>To enable dual-domain support (main site + dev site), run this command from your site root:<br/><code>@command</code><br/>This will configure <code>@main</code> (live) and <code>dev.@main</code> (dev) domains.', array(
+        '@command' => $ddev_command,
+        '@main' => $ddev_project_name . '.ddev.site',
+      )), 'status', FALSE);
+    }
   }
   else {
     backdrop_set_message(t('An error occurred during setup.'), 'error');

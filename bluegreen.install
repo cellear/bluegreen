@@ -50,8 +50,8 @@ function bluegreen_requirements($phase) {
  * Implements hook_install().
  */
 function bluegreen_install() {
-  backdrop_set_message(t('Blue-Green Deployment module has been enabled. Visit the <a href="@url">configuration page</a> to manage your environments.', 
-    array('@url' => url('admin/config/development/bluegreen'))));
+  backdrop_set_message(t('Blue-Green Deployment module has been enabled. Visit the <a href="@url">configuration page</a> to manage your environments.',
+    array('@url' => url('admin/content/bluegreen'))));
 }
 
 /**

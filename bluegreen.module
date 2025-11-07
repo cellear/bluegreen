@@ -13,7 +13,7 @@
 function bluegreen_menu() {
   $items = array();
 
-  $items['admin/config/development/bluegreen'] = array(
+  $items['admin/content/bluegreen'] = array(
     'title' => 'Blue-Green Deployment',
     'description' => 'Manage Blue and Green database environments for deployment.',
     'page callback' => 'backdrop_get_form',
@@ -23,13 +23,13 @@ function bluegreen_menu() {
     'type' => MENU_NORMAL_ITEM,
   );
 
-  $items['admin/config/development/bluegreen/overview'] = array(
+  $items['admin/content/bluegreen/overview'] = array(
     'title' => 'Overview',
     'type' => MENU_DEFAULT_LOCAL_TASK,
     'weight' => -10,
   );
 
-  $items['admin/config/development/bluegreen/setup'] = array(
+  $items['admin/content/bluegreen/setup'] = array(
     'title' => 'Setup',
     'description' => 'Set up Blue-Green deployment for this site.',
     'page callback' => 'backdrop_get_form',
@@ -40,34 +40,34 @@ function bluegreen_menu() {
     'weight' => 10,
   );
 
-  $items['admin/config/development/bluegreen/switch/%'] = array(
+  $items['admin/content/bluegreen/switch/%'] = array(
     'title' => 'Switch Environment',
     'page callback' => 'bluegreen_switch_environment_callback',
-    'page arguments' => array(5),
+    'page arguments' => array(4),
     'access arguments' => array('switch environments'),
     'file' => 'bluegreen.admin.inc',
     'type' => MENU_CALLBACK,
   );
 
-  $items['admin/config/development/bluegreen/sync/%/%'] = array(
+  $items['admin/content/bluegreen/sync/%/%'] = array(
     'title' => 'Sync Environment',
     'page callback' => 'bluegreen_sync_environment_callback',
-    'page arguments' => array(5, 6),
+    'page arguments' => array(4, 5),
     'access arguments' => array('sync environments'),
     'file' => 'bluegreen.admin.inc',
     'type' => MENU_CALLBACK,
   );
 
-  $items['admin/config/development/bluegreen/backup/%'] = array(
+  $items['admin/content/bluegreen/backup/%'] = array(
     'title' => 'Backup Environment',
     'page callback' => 'bluegreen_backup_environment_callback',
-    'page arguments' => array(5),
+    'page arguments' => array(4),
     'access arguments' => array('sync environments'),
     'file' => 'bluegreen.admin.inc',
     'type' => MENU_CALLBACK,
   );
 
-  $items['admin/config/development/bluegreen/clear-cache'] = array(
+  $items['admin/content/bluegreen/clear-cache'] = array(
     'title' => 'Clear Cache After Switch',
     'page callback' => 'bluegreen_clear_cache_callback',
     'access arguments' => array('switch environments'),
@@ -291,11 +291,264 @@ function bluegreen_environment_is_installed($environment) {
 }
 
 /**
+ * Detect the current active config directory.
+ *
+ * Backdrop stores config in files/config_[hash]/active by default.
+ * This function finds that directory.
+ *
+ * @return string|false
+ *   Path to active config directory, or FALSE if not found.
+ */
+function bluegreen_detect_config_directory() {
+  // Check for Backdrop's config API function
+  if (function_exists('config_get_config_directory')) {
+    return config_get_config_directory('active');
+  }
+
+  // Fallback: scan files directory for config_* folders
+  $files_path = 'files';
+  if (is_dir($files_path)) {
+    $dirs = scandir($files_path);
+    foreach ($dirs as $dir) {
+      if (strpos($dir, 'config_') === 0 && is_dir($files_path . '/' . $dir . '/active')) {
+        return $files_path . '/' . $dir . '/active';
+      }
+    }
+  }
+
+  return FALSE;
+}
+
+/**
+ * Get config directory path for an environment.
+ *
+ * @param string $environment
+ *   Either 'blue' or 'green'.
+ * @param string $type
+ *   Either 'active' or 'staging'. Defaults to 'active'.
+ *
+ * @return string|false
+ *   Path to config directory, or FALSE if not found.
+ */
+function bluegreen_get_config_directory($environment, $type = 'active') {
+  $base_config = bluegreen_detect_config_directory();
+
+  if (!$base_config) {
+    return FALSE;
+  }
+
+  // Extract base directory (without /active)
+  $base_path = dirname($base_config);
+
+  // For green environment, use _alt suffix
+  if ($environment === 'green') {
+    $base_path .= '_alt';
+  }
+
+  return $base_path . '/' . $type;
+}
+
+/**
+ * Count config files in an environment.
+ *
+ * @param string $environment
+ *   Either 'blue' or 'green'.
+ * @param string $type
+ *   Either 'active' or 'staging'. Defaults to 'active'.
+ *
+ * @return int
+ *   Number of JSON config files found.
+ */
+function bluegreen_count_config_files($environment, $type = 'active') {
+  $config_dir = bluegreen_get_config_directory($environment, $type);
+
+  if (!$config_dir || !is_dir($config_dir)) {
+    return 0;
+  }
+
+  $files = glob($config_dir . '/*.json');
+  return is_array($files) ? count($files) : 0;
+}
+
+/**
+ * Recursively copy a directory.
+ *
+ * @param string $source
+ *   Source directory path.
+ * @param string $destination
+ *   Destination directory path.
+ *
+ * @return int
+ *   Number of files copied.
+ *
+ * @throws Exception
+ */
+function bluegreen_copy_directory($source, $destination) {
+  if (!is_dir($source)) {
+    throw new Exception(t('Source directory does not exist: @dir',
+      array('@dir' => $source)));
+  }
+
+  // Create destination if it doesn't exist
+  if (!is_dir($destination)) {
+    if (!mkdir($destination, 0755, TRUE)) {
+      throw new Exception(t('Failed to create directory: @dir',
+        array('@dir' => $destination)));
+    }
+  }
+
+  $count = 0;
+  $files = scandir($source);
+
+  foreach ($files as $file) {
+    if ($file === '.' || $file === '..') {
+      continue;
+    }
+
+    $source_file = $source . '/' . $file;
+    $dest_file = $destination . '/' . $file;
+
+    if (is_dir($source_file)) {
+      // Recursive copy for subdirectories
+      $count += bluegreen_copy_directory($source_file, $dest_file);
+    } else {
+      // Copy file
+      if (copy($source_file, $dest_file)) {
+        chmod($dest_file, 0644);
+        $count++;
+      }
+    }
+  }
+
+  return $count;
+}
+
+/**
+ * Sync config files from one environment to another.
+ *
+ * @param string $from
+ *   Source environment ('blue' or 'green').
+ * @param string $to
+ *   Target environment ('blue' or 'green').
+ *
+ * @return array
+ *   Array with 'active' and 'staging' counts.
+ *
+ * @throws Exception
+ */
+function bluegreen_sync_config_files($from, $to) {
+  // Sync active config
+  $from_active = bluegreen_get_config_directory($from, 'active');
+  $to_active = bluegreen_get_config_directory($to, 'active');
+
+  if (!$from_active) {
+    throw new Exception(t('Could not find config directory for @env',
+      array('@env' => $from)));
+  }
+
+  $active_count = bluegreen_copy_directory($from_active, $to_active);
+
+  // Sync staging config
+  $from_staging = bluegreen_get_config_directory($from, 'staging');
+  $to_staging = bluegreen_get_config_directory($to, 'staging');
+
+  $staging_count = 0;
+  if ($from_staging && is_dir($from_staging)) {
+    $staging_count = bluegreen_copy_directory($from_staging, $to_staging);
+  }
+
+  watchdog('bluegreen',
+    'Synced @total config files from @from to @to (@active active, @staging staging)',
+    array(
+      '@total' => $active_count + $staging_count,
+      '@from' => $from,
+      '@to' => $to,
+      '@active' => $active_count,
+      '@staging' => $staging_count,
+    ),
+    WATCHDOG_INFO
+  );
+
+  return array(
+    'active' => $active_count,
+    'staging' => $staging_count,
+    'total' => $active_count + $staging_count,
+  );
+}
+
+/**
+ * Create alternate config directory for green environment.
+ *
+ * Called during initial setup to create the _alt config directory.
+ *
+ * @return bool
+ *   TRUE if created successfully, FALSE otherwise.
+ *
+ * @throws Exception
+ */
+function bluegreen_create_alt_config_directory() {
+  $base_config = bluegreen_detect_config_directory();
+
+  if (!$base_config) {
+    throw new Exception(t('Could not detect current config directory.'));
+  }
+
+  // Get base path (without /active)
+  $base_path = dirname($base_config);
+  $alt_path = $base_path . '_alt';
+
+  // Check if already exists
+  if (is_dir($alt_path)) {
+    watchdog('bluegreen',
+      'Alternate config directory already exists: @path',
+      array('@path' => $alt_path),
+      WATCHDOG_WARNING
+    );
+    return TRUE;
+  }
+
+  // Create active and staging directories
+  $alt_active = $alt_path . '/active';
+  $alt_staging = $alt_path . '/staging';
+
+  if (!mkdir($alt_active, 0755, TRUE)) {
+    throw new Exception(t('Failed to create directory: @dir',
+      array('@dir' => $alt_active)));
+  }
+
+  if (!mkdir($alt_staging, 0755, TRUE)) {
+    throw new Exception(t('Failed to create directory: @dir',
+      array('@dir' => $alt_staging)));
+  }
+
+  // Copy all files from blue to green
+  $active_count = bluegreen_copy_directory($base_config, $alt_active);
+
+  $staging_source = $base_path . '/staging';
+  $staging_count = 0;
+  if (is_dir($staging_source)) {
+    $staging_count = bluegreen_copy_directory($staging_source, $alt_staging);
+  }
+
+  watchdog('bluegreen',
+    'Created alternate config directory with @total files (@active active, @staging staging)',
+    array(
+      '@total' => $active_count + $staging_count,
+      '@active' => $active_count,
+      '@staging' => $staging_count,
+    ),
+    WATCHDOG_INFO
+  );
+
+  return TRUE;
+}
+
+/**
  * Implements hook_init().
  */
 function bluegreen_init() {
   // Add admin CSS if on the blue-green admin page
-  if (arg(0) == 'admin' && arg(1) == 'config' && arg(2) == 'development' && arg(3) == 'bluegreen') {
+  if (arg(0) == 'admin' && arg(1) == 'content' && arg(2) == 'bluegreen') {
     backdrop_add_css(backdrop_get_path('module', 'bluegreen') . '/css/bluegreen.admin.css');
   }
 }
@@ -323,7 +576,7 @@ function bluegreen_admin_bar_output_build(&$content) {
   
   $content['environment']['indicator'] = array(
     '#title' => '<span class="environment-label">' . $color_name . '</span>',
-    '#href' => 'admin/config/development/bluegreen',
+    '#href' => 'admin/content/bluegreen',
     '#options' => array(
       'html' => TRUE,
       'attributes' => array(

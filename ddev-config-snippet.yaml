@@ -1,0 +1,14 @@
+# Blue-Green Deployment Module: DDEV Dual Domain Configuration Template
+#
+# For automated setup, use the setup-ddev.sh script instead!
+#
+# Manual setup: Replace PROJECT_NAME with your actual DDEV project name
+# and append this to your .ddev/config.yaml file.
+#
+# Example:
+#   If your project is "bluegreen-v4", you'll get:
+#     - Main domain: bluegreen-v4.ddev.site (active/live environment)
+#     - Dev domain:  dev.bluegreen-v4.ddev.site (inactive/dev environment)
+
+additional_fqdns:
+  - dev.PROJECT_NAME.ddev.site

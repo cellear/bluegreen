@@ -3,5 +3,5 @@ description = Provides blue-green deployment functionality with dual database en
 package = Development
 type = module
 backdrop = 1.x
-configure = admin/config/development/bluegreen
+configure = admin/content/bluegreen
 

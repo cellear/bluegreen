@@ -37,10 +37,23 @@ This design minimizes database size while ensuring critical data persists across
 
 ## Installation
 
+### Quick Start with DDEV (Recommended)
+
+For new projects, use our automated DDEV setup script:
+
+```bash
+# Run the setup script with your project name
+./bluegreen/setup-ddev.sh my-project-name
+```
+
+See **[DOCS/DDEV-SETUP.md](DOCS/DDEV-SETUP.md)** for complete DDEV installation guide with dual-domain support.
+
+### Manual Installation
+
 1. Copy the module to `modules/bluegreen/`
 2. Enable the module at `admin/modules`
 3. Grant permissions at `admin/people/permissions` (search for "blue-green")
-4. Visit `admin/config/development/bluegreen` and run the Setup wizard
+4. Visit `admin/content/bluegreen` and run the Setup wizard
 5. The wizard will automatically create duplicate tables and configure your environments
 
 ## Configuration

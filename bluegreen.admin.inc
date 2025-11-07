@@ -11,7 +11,7 @@ function bluegreen_admin_form($form, &$form_state) {
   // Check if blue-green is configured
   if (!bluegreen_is_configured()) {
     backdrop_set_message(t('Blue-Green deployment has not been set up yet.'), 'warning');
-    $setup_url = url('admin/config/development/bluegreen/setup');
+    $setup_url = url('admin/content/bluegreen/setup');
     $form['setup_message'] = array(
       '#markup' => '<h2>' . t('Welcome to Blue-Green Deployment') . '</h2>' .
         '<p>' . t('Blue-Green deployment is not configured yet. Use the Setup tab to initialize blue-green deployment for this site.') . '</p>' .
@@ -22,15 +22,36 @@ function bluegreen_admin_form($form, &$form_state) {
 
   $active = bluegreen_get_active_environment();
   $idle = bluegreen_get_idle_environment();
-  
+
   $blue_info = bluegreen_get_environment_info('blue');
   $green_info = bluegreen_get_environment_info('green');
-  
+
   $blue_installed = bluegreen_environment_is_installed('blue');
   $green_installed = bluegreen_environment_is_installed('green');
-  
+
   $blue_last_sync = bluegreen_get_last_sync('blue');
   $green_last_sync = bluegreen_get_last_sync('green');
+
+  // Build dev domain URL for idle environment
+  $dev_url = '';
+  if (isset($_SERVER['HTTP_HOST'])) {
+    $current_host = $_SERVER['HTTP_HOST'];
+    $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
+
+    // If we're on the main domain, dev URL is dev.domain
+    // If we're on dev.domain, main URL is just domain
+    if (strpos($current_host, 'dev.') === 0) {
+      // Currently on dev domain, so main URL is without "dev."
+      $main_host = substr($current_host, 4);
+      $live_url = $protocol . '://' . $main_host;
+      $dev_url = $protocol . '://' . $current_host;
+    }
+    else {
+      // Currently on main domain, so dev URL is with "dev."
+      $dev_url = $protocol . '://dev.' . $current_host;
+      $live_url = $protocol . '://' . $current_host;
+    }
+  }
 
   $form['#tree'] = TRUE;
 
@@ -49,11 +70,19 @@ function bluegreen_admin_form($form, &$form_state) {
     '#markup' => '<h2>' . t('Blue Environment') . '</h2>',
   );
 
+  $blue_status_markup = '<div class="environment-status ' . ($active === 'blue' ? 'status-live' : 'status-idle') . '">' .
+    '<span class="status-indicator"></span> ' .
+    ($active === 'blue' ? t('Live') : t('Idle (Dev)'));
+
+  // Add dev URL link for idle environment
+  if ($active !== 'blue' && !empty($dev_url)) {
+    $blue_status_markup .= ' <a href="' . check_url($dev_url) . '" target="_blank" class="dev-link">' . t('Visit Dev Site') . ' →</a>';
+  }
+
+  $blue_status_markup .= '</div>';
+
   $form['environments']['blue']['status'] = array(
-    '#markup' => '<div class="environment-status ' . ($active === 'blue' ? 'status-live' : 'status-idle') . '">' .
-      '<span class="status-indicator"></span> ' .
-      ($active === 'blue' ? t('Live') : t('Idle (Dev)')) .
-      '</div>',
+    '#markup' => $blue_status_markup,
   );
 
   // Get displayable prefix value (handle both string and array)
@@ -112,11 +141,19 @@ function bluegreen_admin_form($form, &$form_state) {
     '#markup' => '<h2>' . t('Green Environment') . '</h2>',
   );
 
+  $green_status_markup = '<div class="environment-status ' . ($active === 'green' ? 'status-live' : 'status-idle') . '">' .
+    '<span class="status-indicator"></span> ' .
+    ($active === 'green' ? t('Live') : t('Idle (Dev)'));
+
+  // Add dev URL link for idle environment
+  if ($active !== 'green' && !empty($dev_url)) {
+    $green_status_markup .= ' <a href="' . check_url($dev_url) . '" target="_blank" class="dev-link">' . t('Visit Dev Site') . ' →</a>';
+  }
+
+  $green_status_markup .= '</div>';
+
   $form['environments']['green']['status'] = array(
-    '#markup' => '<div class="environment-status ' . ($active === 'green' ? 'status-live' : 'status-idle') . '">' .
-      '<span class="status-indicator"></span> ' .
-      ($active === 'green' ? t('Live') : t('Idle (Dev)')) .
-      '</div>',
+    '#markup' => $green_status_markup,
   );
 
   // Get displayable prefix value (handle both string and array)
@@ -261,10 +298,19 @@ function bluegreen_sync_batch_operation($from, $to, &$context) {
     $context['sandbox']['max'] = 1;
     $context['results']['from'] = $from;
     $context['results']['to'] = $to;
+    $context['results']['config_synced'] = 0;
+    $context['results']['table_count'] = 0;
   }
 
   try {
-    bluegreen_sync_database($from, $to);
+    // Sync database tables
+    $table_count = bluegreen_sync_database($from, $to);
+    $context['results']['table_count'] = $table_count;
+
+    // Sync config files
+    $config_result = bluegreen_sync_config_files($from, $to);
+    $context['results']['config_synced'] = $config_result['total'];
+
     bluegreen_set_last_sync($to);
     $context['results']['success'] = TRUE;
   }
@@ -282,11 +328,22 @@ function bluegreen_sync_batch_operation($from, $to, &$context) {
  */
 function bluegreen_sync_batch_finished($success, $results, $operations) {
   if (!empty($results['success'])) {
-    backdrop_set_message(t('Successfully synced @to environment from @from.', 
-      array('@to' => $results['to'], '@from' => $results['from'])));
+    $table_count = !empty($results['table_count']) ? $results['table_count'] : 0;
+    backdrop_set_message(t('Successfully synced @count tables from @from to @to.',
+      array(
+        '@count' => $table_count,
+        '@from' => ucfirst($results['from']),
+        '@to' => ucfirst($results['to']),
+      )));
+
+    // Show config sync information if available
+    if (!empty($results['config_synced'])) {
+      backdrop_set_message(t('Synced @count configuration files.',
+        array('@count' => $results['config_synced'])));
+    }
   }
   else {
-    backdrop_set_message(t('Error syncing environments: @error', 
+    backdrop_set_message(t('Error syncing environments: @error',
       array('@error' => $results['error'])), 'error');
   }
 }
@@ -300,13 +357,13 @@ function bluegreen_switch_submit($form, &$form_state) {
   
   try {
     bluegreen_switch_environment($new);
-    backdrop_set_message(t('Successfully switched to @env environment!', 
+    backdrop_set_message(t('Successfully switched to @env environment!',
       array('@env' => ucfirst($new))), 'status');
-    backdrop_set_message(t('The @env environment is now live. All visitors will see content from the @env database tables.', 
+    backdrop_set_message(t('The @env environment is now live. All visitors will see content from the @env database tables.',
       array('@env' => $new)), 'status');
-    
+
     // Redirect to cache clear page first, then to admin page
-    $form_state['redirect'] = 'admin/config/development/bluegreen/clear-cache';
+    $form_state['redirect'] = 'admin/content/bluegreen/clear-cache';
   }
   catch (Exception $e) {
     backdrop_set_message(t('Error switching environments: @message', 
@@ -322,22 +379,25 @@ function bluegreen_switch_submit($form, &$form_state) {
  * @param string $to
  *   Target environment ('blue' or 'green').
  *
+ * @return int
+ *   Number of tables synced.
+ *
  * @throws Exception
  */
 function bluegreen_sync_database($from, $to) {
   $from_info = bluegreen_get_environment_info($from);
   $to_info = bluegreen_get_environment_info($to);
-  
+
   if (!$from_info || !$to_info) {
     throw new Exception(t('Invalid environment configuration.'));
   }
 
   $from_prefix = !empty($from_info['prefix']) ? $from_info['prefix'] : '';
   $to_prefix = !empty($to_info['prefix']) ? $to_info['prefix'] : '';
-  
+
   // Get list of source tables
   $source_tables = db_find_tables($from_prefix . '%');
-  
+
   if (empty($source_tables)) {
     throw new Exception(t('No tables found in source environment.'));
   }
@@ -355,23 +415,28 @@ function bluegreen_sync_database($from, $to) {
   }
 
   // Copy each table from source to target (except shared tables)
+  $synced_count = 0;
   foreach ($source_tables as $source_table) {
     // Determine target table name by replacing prefix
     $base_name = substr($source_table, strlen($from_prefix));
-    
+
     // Skip shared tables
     if (in_array($base_name, $shared_tables)) {
       continue;
     }
-    
+
     $target_table = $to_prefix . $base_name;
-    
+
     // Create table structure
     db_query("CREATE TABLE {$target_table} LIKE {$source_table}");
-    
+
     // Copy data
     db_query("INSERT INTO {$target_table} SELECT * FROM {$source_table}");
+
+    $synced_count++;
   }
+
+  return $synced_count;
 }
 
 /**
@@ -529,7 +594,7 @@ function bluegreen_switch_environment_callback($environment) {
     backdrop_set_message(t('Error: @message', array('@message' => $e->getMessage())), 'error');
   }
   
-  backdrop_goto('admin/config/development/bluegreen');
+  backdrop_goto('admin/content/bluegreen');
 }
 
 /**
@@ -537,16 +602,32 @@ function bluegreen_switch_environment_callback($environment) {
  */
 function bluegreen_sync_environment_callback($from, $to) {
   try {
-    bluegreen_sync_database($from, $to);
+    // Sync database tables
+    $table_count = bluegreen_sync_database($from, $to);
+
+    // Sync config files
+    $config_result = bluegreen_sync_config_files($from, $to);
+
     bluegreen_set_last_sync($to);
-    backdrop_set_message(t('Successfully synced @to from @from.', 
-      array('@to' => $to, '@from' => $from)));
+
+    backdrop_set_message(t('Successfully synced @count tables from @from to @to.',
+      array(
+        '@count' => $table_count,
+        '@from' => ucfirst($from),
+        '@to' => ucfirst($to),
+      )));
+
+    // Show config sync count
+    if (!empty($config_result['total'])) {
+      backdrop_set_message(t('Synced @count configuration files.',
+        array('@count' => $config_result['total'])));
+    }
   }
   catch (Exception $e) {
     backdrop_set_message(t('Error: @message', array('@message' => $e->getMessage())), 'error');
   }
-  
-  backdrop_goto('admin/config/development/bluegreen');
+
+  backdrop_goto('admin/content/bluegreen');
 }
 
 /**
@@ -569,7 +650,7 @@ function bluegreen_backup_environment_callback($environment) {
     backdrop_set_message(t('Error: @message', array('@message' => $e->getMessage())), 'error');
   }
   
-  backdrop_goto('admin/config/development/bluegreen');
+  backdrop_goto('admin/content/bluegreen');
 }
 
 /**
@@ -586,7 +667,7 @@ function bluegreen_clear_cache_callback() {
   backdrop_flush_all_caches();
   
   backdrop_set_message(t('Cache cleared for new environment.'), 'status');
-  backdrop_goto('admin/config/development/bluegreen');
+  backdrop_goto('admin/content/bluegreen');
 }
 
 /**
@@ -612,10 +693,11 @@ function bluegreen_setup_form($form, &$form_state) {
       '<p>' . t('This wizard will configure your site for blue-green deployment by:') . '</p>' .
       '<ol>' .
       '<li>' . t('Duplicating your current database tables with alt_ prefix (for green environment)') . '</li>' .
+      '<li>' . t('Creating alternate config directory (config_[hash]_alt) with copies of all configuration files') . '</li>' .
       '<li>' . t('Creating settings.bluegreen.php with environment configurations') . '</li>' .
       '<li>' . t('Setting up the state tracking system') . '</li>' .
       '</ol>' .
-      '<p>' . t('<strong>Note:</strong> Blue environment = unprefixed tables (current), Green environment = alt_ prefixed tables (alternate)') . '</p>',
+      '<p>' . t('<strong>Note:</strong> Blue environment = unprefixed tables + standard config directory, Green environment = alt_ prefixed tables + _alt config directory') . '</p>',
   );
   
   $form['current_info'] = array(
@@ -681,18 +763,19 @@ function bluegreen_setup_form($form, &$form_state) {
 function bluegreen_setup_form_submit($form, &$form_state) {
   $initial_active = $form_state['values']['initial_active'];
   
-  // Use batch API for table duplication
+  // Use batch API for table duplication and config setup
   $batch = array(
     'title' => t('Setting up Blue-Green Deployment'),
     'operations' => array(
       array('bluegreen_setup_duplicate_tables', array($initial_active)),
+      array('bluegreen_setup_create_config_directories', array($initial_active)),
       array('bluegreen_setup_write_settings', array($initial_active)),
       array('bluegreen_setup_finalize', array($initial_active)),
     ),
     'finished' => 'bluegreen_setup_finished',
     'file' => backdrop_get_path('module', 'bluegreen') . '/bluegreen.admin.inc',
   );
-  
+
   batch_set($batch);
 }
 
@@ -767,6 +850,36 @@ function bluegreen_setup_duplicate_tables($initial_active, &$context) {
   
   if ($context['sandbox']['progress'] < $context['sandbox']['max']) {
     $context['finished'] = $context['sandbox']['progress'] / $context['sandbox']['max'];
+  }
+}
+
+/**
+ * Batch operation: Create alternate config directories for green environment.
+ */
+function bluegreen_setup_create_config_directories($initial_active, &$context) {
+  try {
+    // Call the helper function to create and populate the alternate config directory
+    bluegreen_create_alt_config_directory();
+
+    // Count config files in both environments for reporting
+    $blue_active_count = bluegreen_count_config_files('blue', 'active');
+    $blue_staging_count = bluegreen_count_config_files('blue', 'staging');
+    $green_active_count = bluegreen_count_config_files('green', 'active');
+    $green_staging_count = bluegreen_count_config_files('green', 'staging');
+
+    $context['results']['config_blue_active'] = $blue_active_count;
+    $context['results']['config_blue_staging'] = $blue_staging_count;
+    $context['results']['config_green_active'] = $green_active_count;
+    $context['results']['config_green_staging'] = $green_staging_count;
+    $context['results']['config_created'] = TRUE;
+
+    $context['message'] = t('Created alternate config directories with @count files', array(
+      '@count' => $green_active_count + $green_staging_count,
+    ));
+  }
+  catch (Exception $e) {
+    $context['results']['config_error'] = $e->getMessage();
+    backdrop_set_message(t('Error creating config directories: @message', array('@message' => $e->getMessage())), 'error');
   }
 }
 
@@ -882,6 +995,32 @@ if ($show_env === 'green') {
   $databases['default']['default']['prefix'] = $shared_table_prefix;
 }
 
+// Config directory routing
+// Each environment gets its own config directory for true isolation
+$config_base_dir = 'files/config_' . md5('backdrop_config');
+
+// Detect actual config directory (may vary by installation)
+if (is_dir('files')) {
+  $files_dirs = scandir('files');
+  foreach ($files_dirs as $dir) {
+    if (strpos($dir, 'config_') === 0 && $dir !== '.' && $dir !== '..') {
+      $config_base_dir = 'files/' . $dir;
+      break;
+    }
+  }
+}
+
+// Set config directory based on which environment we're showing
+if ($show_env === 'green') {
+  // Green environment uses _alt config directory
+  $config_directories['active'] = $config_base_dir . '_alt/active';
+  $config_directories['staging'] = $config_base_dir . '_alt/staging';
+} else {
+  // Blue environment uses standard config directory
+  $config_directories['active'] = $config_base_dir . '/active';
+  $config_directories['staging'] = $config_base_dir . '/staging';
+}
+
 PHP;
   
   $settings_file = BACKDROP_ROOT . '/settings.bluegreen.php';
@@ -948,6 +1087,15 @@ function bluegreen_setup_finished($success, $results, $operations) {
     backdrop_set_message(t('Created @count tables across both environments.', array(
       '@count' => $results['tables_created'],
     )));
+
+    // Show config directory information if available
+    if (!empty($results['config_created'])) {
+      $config_total = $results['config_green_active'] + $results['config_green_staging'];
+      backdrop_set_message(t('Created alternate config directory with @count configuration files.', array(
+        '@count' => $config_total,
+      )));
+    }
+
     backdrop_set_message(t('Active environment: @env', array(
       '@env' => $results['active_environment'],
     )));

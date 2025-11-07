@@ -42,16 +42,32 @@ ddev config --project-type=backdrop --project-name="${PROJECT_NAME}" --php-versi
 
 # Step 2: Add dual domain support
 echo -e "\n${BLUE}Step 2: Adding dual domain configuration...${NC}"
-cat >> .ddev/config.yaml <<EOF
+
+DEV_DOMAIN="dev.${PROJECT_NAME}.ddev.site"
+
+# Check if additional_fqdns already exists in config
+if grep -q "^additional_fqdns:" .ddev/config.yaml 2>/dev/null; then
+  # Check if our dev domain is already in the list
+  if grep -q "$DEV_DOMAIN" .ddev/config.yaml; then
+    echo -e "${GREEN}✓ Dev domain already configured: $DEV_DOMAIN${NC}"
+  else
+    # Add to existing additional_fqdns list
+    sed -i.bak "/^additional_fqdns:/a\\
+  - $DEV_DOMAIN" .ddev/config.yaml
+    echo -e "${GREEN}✓ Added $DEV_DOMAIN to existing additional_fqdns${NC}"
+  fi
+else
+  # No additional_fqdns section exists, create it
+  cat >> .ddev/config.yaml <<EOF
 
 # Blue-Green Deployment Module: Dual Domain Support
 # Main domain: ${PROJECT_NAME}.ddev.site (active/live environment)
 # Dev domain: dev.${PROJECT_NAME}.ddev.site (inactive/dev environment)
 additional_fqdns:
-  - dev.${PROJECT_NAME}.ddev.site
+  - $DEV_DOMAIN
 EOF
-
-echo -e "${GREEN}✓ Added dev.${PROJECT_NAME}.ddev.site as additional domain${NC}"
+  echo -e "${GREEN}✓ Created additional_fqdns with $DEV_DOMAIN${NC}"
+fi
 
 # Step 3: Start DDEV
 echo -e "\n${BLUE}Step 3: Starting DDEV...${NC}"

@@ -10,41 +10,53 @@ graph TD
     classDef hookFunc fill:#e1f5ff,stroke:#0066cc,stroke-width:2px
     classDef envFunc fill:#fff4e1,stroke:#ff9900,stroke-width:2px
     classDef configFunc fill:#e8f5e9,stroke:#4caf50,stroke-width:2px
-    classDef utilFunc fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px
+    classDef stateFunc fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px
 
-    %% Hook Implementations
-    menu[bluegreen_menu<br/>:13]:::hookFunc
-    perm[bluegreen_permission<br/>:84]:::hookFunc
-    init[bluegreen_init<br/>:549]:::hookFunc
-    adminbar[bluegreen_admin_bar_output_build<br/>:559]:::hookFunc
+    subgraph " "
+        subgraph "Hooks & UI"
+            menu[bluegreen_menu :13]:::hookFunc
+            perm[bluegreen_permission :84]:::hookFunc
+            init[bluegreen_init :549]:::hookFunc
+            adminbar[bluegreen_admin_bar_output_build :559]:::hookFunc
+        end
 
-    %% Environment Info Functions
-    get_active[bluegreen_get_active_environment<br/>:110]:::envFunc
-    get_env_info[bluegreen_get_environment_info<br/>:124]:::envFunc
-    is_configured[bluegreen_is_configured<br/>:140]:::envFunc
-    get_idle[bluegreen_get_idle_environment<br/>:160]:::envFunc
-    get_shared[bluegreen_get_shared_tables<br/>:174]:::envFunc
-    get_last_sync[bluegreen_get_last_sync<br/>:196]:::envFunc
-    set_last_sync[bluegreen_set_last_sync<br/>:208]:::envFunc
-    get_table_count[bluegreen_get_table_count<br/>:224]:::envFunc
-    env_installed[bluegreen_environment_is_installed<br/>:289]:::envFunc
+        subgraph "Environment Management"
+            get_active[get_active_environment :110]:::envFunc
+            get_idle[get_idle_environment :160]:::envFunc
+            is_configured[is_configured :140]:::envFunc
+            env_installed[environment_is_installed :289]:::envFunc
+            get_env_info[get_environment_info :124]:::envFunc
+            get_table_count[get_table_count :224]:::envFunc
+            get_shared[get_shared_tables :174]:::envFunc
+        end
 
-    %% Config Directory Functions
-    detect_config[bluegreen_detect_config_directory<br/>:302]:::configFunc
-    get_config_dir[bluegreen_get_config_directory<br/>:333]:::configFunc
-    count_config[bluegreen_count_config_files<br/>:362]:::configFunc
-    copy_dir[bluegreen_copy_directory<br/>:386]:::configFunc
-    sync_config[bluegreen_sync_config_files<br/>:439]:::configFunc
-    create_alt_config[bluegreen_create_alt_config_directory<br/>:489]:::configFunc
+        subgraph "Configuration Management"
+            detect_config[detect_config_directory :302]:::configFunc
+            get_config_dir[get_config_directory :333]:::configFunc
+            count_config[count_config_files :362]:::configFunc
+            copy_dir[copy_directory :386]:::configFunc
+            sync_config[sync_config_files :439]:::configFunc
+            create_alt_config[create_alt_config_directory :489]:::configFunc
+        end
 
-    %% Call Relationships - Environment Functions
+        subgraph "State Management"
+            get_last_sync[get_last_sync :196]:::stateFunc
+            set_last_sync[set_last_sync :208]:::stateFunc
+        end
+    end
+
+    %% Hook to Environment calls
+    adminbar --> is_configured
+    adminbar --> get_active
+
+    %% Environment function calls
     get_idle --> get_active
     is_configured --> get_env_info
     is_configured --> env_installed
     env_installed --> get_table_count
     get_table_count --> get_env_info
 
-    %% Call Relationships - Config Functions
+    %% Config function calls
     get_config_dir --> detect_config
     count_config --> get_config_dir
     sync_config --> get_config_dir
@@ -52,17 +64,52 @@ graph TD
     create_alt_config --> detect_config
     create_alt_config --> copy_dir
     copy_dir -.recursive.-> copy_dir
+```
 
-    %% Call Relationships - Hooks
-    adminbar --> is_configured
-    adminbar --> get_active
+## Environment Functions Call Flow
 
-    %% Legend
-    subgraph Legend
-        L1[Hook Implementation]:::hookFunc
-        L2[Environment Function]:::envFunc
-        L3[Config Function]:::configFunc
-    end
+```mermaid
+graph TD
+    A[adminbar :559]:::hookFunc
+    B[is_configured :140]:::envFunc
+    C[get_env_info :124]:::envFunc
+    D[env_installed :289]:::envFunc
+    E[get_table_count :224]:::envFunc
+    F[get_active :110]:::envFunc
+    G[get_idle :160]:::envFunc
+
+    A --> B
+    A --> F
+    B --> C
+    B --> D
+    D --> E
+    E --> C
+    G --> F
+
+    classDef hookFunc fill:#e1f5ff,stroke:#0066cc,stroke-width:2px
+    classDef envFunc fill:#fff4e1,stroke:#ff9900,stroke-width:2px
+```
+
+## Configuration Functions Call Flow
+
+```mermaid
+graph TD
+    A[sync_config_files :439]:::configFunc
+    B[create_alt_config_directory :489]:::configFunc
+    C[count_config_files :362]:::configFunc
+    D[get_config_directory :333]:::configFunc
+    E[detect_config_directory :302]:::configFunc
+    F[copy_directory :386]:::configFunc
+
+    A --> D
+    A --> F
+    B --> E
+    B --> F
+    C --> D
+    D --> E
+    F -.recursive.-> F
+
+    classDef configFunc fill:#e8f5e9,stroke:#4caf50,stroke-width:2px
 ```
 
 ## Function Groups
@@ -94,6 +141,11 @@ Functions that manage configuration directories:
 - **bluegreen_copy_directory** (:386) - Recursively copies directories
 - **bluegreen_sync_config_files** (:439) - Syncs config between envs
 - **bluegreen_create_alt_config_directory** (:489) - Creates green config dir
+
+### 🟣 State Functions (Purple)
+Functions that manage state persistence:
+- **bluegreen_get_last_sync** (:196) - Gets last sync timestamp
+- **bluegreen_set_last_sync** (:208) - Sets sync timestamp
 
 ## Call Chains
 
@@ -187,4 +239,4 @@ These functions don't call other bluegreen functions:
 
 ---
 
-**Note:** The diagram above uses Mermaid syntax and will render as an interactive graph on GitHub and other platforms that support Mermaid diagrams.
+**Note:** The diagrams above use Mermaid syntax and will render as interactive graphs on GitHub and other platforms that support Mermaid diagrams.

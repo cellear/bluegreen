@@ -2,255 +2,338 @@
 
 Visual representation of all functions across all files and their relationships.
 
-## Complete System Architecture
+## Complete System Overview
 
 ```mermaid
-graph TB
-    %% Styling
-    classDef moduleFunc fill:#e1f5ff,stroke:#0066cc,stroke-width:2px
-    classDef adminFunc fill:#fff4e1,stroke:#ff9900,stroke-width:2px
-    classDef installFunc fill:#ffe1e1,stroke:#cc0000,stroke-width:2px
-    classDef batchFunc fill:#e8f5e9,stroke:#4caf50,stroke-width:3px
-
-    subgraph "bluegreen.module (Core)"
-        %% Environment Functions
-        get_active[get_active_environment]:::moduleFunc
-        get_env_info[get_environment_info]:::moduleFunc
-        is_configured[is_configured]:::moduleFunc
-        get_idle[get_idle_environment]:::moduleFunc
-        get_shared[get_shared_tables]:::moduleFunc
-        get_table_count[get_table_count]:::moduleFunc
-        env_installed[environment_is_installed]:::moduleFunc
-
-        %% Config Functions
-        detect_config[detect_config_directory]:::moduleFunc
-        get_config_dir[get_config_directory]:::moduleFunc
-        count_config[count_config_files]:::moduleFunc
-        copy_dir[copy_directory]:::moduleFunc
-        sync_config[sync_config_files]:::moduleFunc
-        create_alt[create_alt_config_directory]:::moduleFunc
-
-        %% State Functions
-        get_last_sync[get_last_sync]:::moduleFunc
-        set_last_sync[set_last_sync]:::moduleFunc
+graph TD
+    subgraph "USER INTERFACE LAYER"
+        admin_form[admin_form<br/>Main UI]:::adminFunc
+        setup_form[setup_form<br/>Setup Wizard]:::adminFunc
     end
 
-    subgraph "bluegreen.admin.inc (Admin UI)"
-        %% Forms
-        admin_form[admin_form]:::adminFunc
-        setup_form[setup_form]:::adminFunc
-
-        %% Submit Handlers
+    subgraph "SUBMIT HANDLERS"
         backup_submit[backup_submit]:::adminFunc
         sync_submit[sync_submit]:::adminFunc
         switch_submit[switch_submit]:::adminFunc
         setup_submit[setup_form_submit]:::adminFunc
+    end
 
-        %% Callbacks
-        switch_callback[switch_environment_callback]:::adminFunc
-        sync_callback[sync_environment_callback]:::adminFunc
-        backup_callback[backup_environment_callback]:::adminFunc
-        clear_cache_callback[clear_cache_callback]:::adminFunc
+    subgraph "CORE OPERATIONS"
+        switch_env[switch_environment]:::adminFunc
+        sync_db[sync_database]:::adminFunc
+    end
 
-        %% Core Operations
-        sync_database[sync_database]:::adminFunc
-        copy_table[copy_table]:::adminFunc
-        switch_environment[switch_environment]:::adminFunc
-
-        %% Batch Operations
+    subgraph "BATCH OPERATIONS"
         sync_batch_op[sync_batch_operation]:::batchFunc
-        sync_batch_finish[sync_batch_finished]:::batchFunc
-        setup_dup_tables[setup_duplicate_tables]:::batchFunc
-        setup_create_config[setup_create_config_directories]:::batchFunc
-        setup_write_settings[setup_write_settings]:::batchFunc
-        setup_finalize[setup_finalize]:::batchFunc
-        setup_finished[setup_finished]:::batchFunc
+        setup_dup[setup_duplicate_tables]:::batchFunc
+        setup_config[setup_create_config_directories]:::batchFunc
+        setup_settings[setup_write_settings]:::batchFunc
+        setup_final[setup_finalize]:::batchFunc
     end
 
-    subgraph "bluegreen.install (Install/Uninstall)"
-        requirements[requirements]:::installFunc
-        install[install]:::installFunc
-        uninstall[uninstall]:::installFunc
+    subgraph "MODULE FUNCTIONS"
+        direction TB
+        subgraph "Environment"
+            get_active[get_active_environment]:::moduleFunc
+            get_env_info[get_environment_info]:::moduleFunc
+            is_configured[is_configured]:::moduleFunc
+            env_installed[environment_is_installed]:::moduleFunc
+            get_shared[get_shared_tables]:::moduleFunc
+        end
+
+        subgraph "Configuration"
+            detect_config[detect_config_directory]:::moduleFunc
+            get_config_dir[get_config_directory]:::moduleFunc
+            sync_config[sync_config_files]:::moduleFunc
+            create_alt[create_alt_config_directory]:::moduleFunc
+        end
+
+        subgraph "State"
+            set_last_sync[set_last_sync]:::moduleFunc
+        end
     end
 
-    %% Cross-file relationships - Admin to Module
-    admin_form --> is_configured
-    admin_form --> get_active
-    admin_form --> get_idle
-    admin_form --> get_env_info
-    admin_form --> env_installed
-    admin_form --> get_last_sync
+    %% UI to Handlers
+    admin_form --> switch_submit
+    admin_form --> sync_submit
+    setup_form --> setup_submit
 
-    setup_form --> is_configured
+    %% Handlers to Operations
+    switch_submit --> switch_env
+    sync_submit --> sync_batch_op
+    setup_submit --> setup_dup
+    setup_submit --> setup_config
+    setup_submit --> setup_settings
+    setup_submit --> setup_final
 
-    switch_submit --> get_active
-    switch_submit --> get_idle
-    switch_submit --> switch_environment
-
-    sync_batch_op --> sync_database
+    %% Operations to Module
+    sync_batch_op --> sync_db
     sync_batch_op --> sync_config
     sync_batch_op --> set_last_sync
 
-    sync_callback --> sync_database
-    sync_callback --> sync_config
-    sync_callback --> set_last_sync
+    switch_env --> get_env_info
+    sync_db --> get_env_info
+    sync_db --> get_shared
 
-    switch_callback --> switch_environment
+    admin_form --> is_configured
+    admin_form --> get_active
 
-    setup_dup_tables --> get_shared
-    setup_create_config --> create_alt
-    setup_create_config --> count_config
+    setup_dup --> get_shared
+    setup_config --> create_alt
 
-    %% Within-module relationships
-    get_idle --> get_active
-    is_configured --> get_env_info
     is_configured --> env_installed
-    env_installed --> get_table_count
-    get_table_count --> get_env_info
-
-    get_config_dir --> detect_config
-    count_config --> get_config_dir
     sync_config --> get_config_dir
-    sync_config --> copy_dir
-    create_alt --> detect_config
-    create_alt --> copy_dir
-    copy_dir -.recursive.-> copy_dir
+    get_config_dir --> detect_config
 
-    %% Within-admin relationships
-    sync_database --> get_env_info
-    sync_database --> get_shared
-    switch_environment --> get_env_info
-
-    sync_submit --> sync_batch_op
-    setup_submit --> setup_dup_tables
-    setup_submit --> setup_create_config
-    setup_submit --> setup_write_settings
-    setup_submit --> setup_finalize
+    classDef moduleFunc fill:#e1f5ff,stroke:#0066cc,stroke-width:2px
+    classDef adminFunc fill:#fff4e1,stroke:#ff9900,stroke-width:2px
+    classDef batchFunc fill:#e8f5e9,stroke:#4caf50,stroke-width:3px
 ```
 
-## File-by-File Breakdown
+## Environment Switch Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant User
+    participant UI as admin_form
+    participant Handler as switch_submit
+    participant Core as switch_environment
+    participant Module as module functions
+
+    User->>UI: Click "Make Green Live"
+    UI->>Handler: Submit form
+    Handler->>Module: get_active_environment()
+    Module-->>Handler: 'blue'
+    Handler->>Module: get_idle_environment()
+    Module-->>Handler: 'green'
+    Handler->>Core: switch_environment('green')
+    Core->>Module: get_environment_info('green')
+    Module-->>Core: DB config
+    Core->>Core: Update settings.bluegreen.php
+    Core->>Core: state_set('bluegreen_active_environment')
+    Core-->>Handler: Success
+    Handler->>Handler: backdrop_flush_all_caches()
+    Handler->>UI: Redirect
+    UI->>User: "Environment switched!"
+```
+
+## Database Sync Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant User
+    participant UI as admin_form
+    participant Handler as sync_submit
+    participant Batch as sync_batch_operation
+    participant DB as sync_database
+    participant Config as sync_config_files
+    participant Module as module functions
+
+    User->>UI: Click "Sync from Blue"
+    UI->>Handler: Submit form
+    Handler->>Batch: batch_set()
+    activate Batch
+    Batch->>DB: sync_database('blue', 'green')
+    activate DB
+    DB->>Module: get_environment_info()
+    DB->>Module: get_shared_tables()
+    DB->>DB: DROP target tables
+    DB->>DB: CREATE TABLE LIKE
+    DB->>DB: INSERT INTO SELECT
+    deactivate DB
+    Batch->>Config: sync_config_files('blue', 'green')
+    activate Config
+    Config->>Module: get_config_directory()
+    Config->>Module: copy_directory()
+    deactivate Config
+    Batch->>Module: set_last_sync('green')
+    deactivate Batch
+    Batch->>UI: Show results
+    UI->>User: "Synced N tables!"
+```
+
+## Initial Setup Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant User
+    participant Setup as setup_form
+    participant Submit as setup_form_submit
+    participant B1 as Batch: Duplicate Tables
+    participant B2 as Batch: Create Config
+    participant B3 as Batch: Write Settings
+    participant B4 as Batch: Finalize
+
+    User->>Setup: Choose active environment
+    Setup->>Submit: Submit
+    Submit->>B1: Start batch
+    activate B1
+    Note over B1: CREATE TABLE alt_*<br/>INSERT INTO alt_*
+    deactivate B1
+    Submit->>B2: Next batch step
+    activate B2
+    Note over B2: create_alt_config_directory()<br/>copy all .json files
+    deactivate B2
+    Submit->>B3: Next batch step
+    activate B3
+    Note over B3: Create settings.bluegreen.php<br/>Update settings.php
+    deactivate B3
+    Submit->>B4: Final batch step
+    activate B4
+    Note over B4: state_set()<br/>backdrop_flush_all_caches()
+    deactivate B4
+    B4->>User: "Setup complete!"
+```
+
+## Module Function Groups
 
 ### bluegreen.module (18 functions)
 
 ```mermaid
-graph LR
-    subgraph "Environment Management"
-        A1[get_active_environment]
-        A2[get_idle_environment]
-        A3[get_environment_info]
-        A4[is_configured]
-        A5[environment_is_installed]
-        A6[get_table_count]
-        A7[get_shared_tables]
-
-        A2 --> A1
-        A4 --> A3
-        A4 --> A5
-        A5 --> A6
-        A6 --> A3
+graph TD
+    subgraph "Hooks"
+        H1[menu :13]
+        H2[permission :84]
+        H3[init :549]
+        H4[admin_bar_output_build :559]
     end
 
-    subgraph "Config Management"
-        B1[detect_config_directory]
-        B2[get_config_directory]
-        B3[count_config_files]
-        B4[copy_directory]
-        B5[sync_config_files]
-        B6[create_alt_config_directory]
+    subgraph "Environment Management"
+        E1[get_active_environment :110]
+        E2[get_idle_environment :160]
+        E3[get_environment_info :124]
+        E4[is_configured :140]
+        E5[environment_is_installed :289]
+        E6[get_table_count :224]
+        E7[get_shared_tables :174]
+    end
 
-        B2 --> B1
-        B3 --> B2
-        B5 --> B2
-        B5 --> B4
-        B6 --> B1
-        B6 --> B4
-        B4 -.recursive.-> B4
+    subgraph "Configuration Management"
+        C1[detect_config_directory :302]
+        C2[get_config_directory :333]
+        C3[count_config_files :362]
+        C4[copy_directory :386]
+        C5[sync_config_files :439]
+        C6[create_alt_config_directory :489]
     end
 
     subgraph "State Management"
-        C1[get_last_sync]
-        C2[set_last_sync]
+        S1[get_last_sync :196]
+        S2[set_last_sync :208]
     end
 
-    style A1 fill:#e1f5ff
-    style A2 fill:#e1f5ff
-    style A3 fill:#e1f5ff
-    style A4 fill:#e1f5ff
-    style A5 fill:#e1f5ff
-    style A6 fill:#e1f5ff
-    style A7 fill:#e1f5ff
-    style B1 fill:#c8e6c9
-    style B2 fill:#c8e6c9
-    style B3 fill:#c8e6c9
-    style B4 fill:#c8e6c9
-    style B5 fill:#c8e6c9
-    style B6 fill:#c8e6c9
-    style C1 fill:#fff9c4
-    style C2 fill:#fff9c4
+    %% Hook dependencies
+    H4 --> E4
+    H4 --> E1
+
+    %% Environment dependencies
+    E2 --> E1
+    E4 --> E3
+    E4 --> E5
+    E5 --> E6
+    E6 --> E3
+
+    %% Config dependencies
+    C2 --> C1
+    C3 --> C2
+    C5 --> C2
+    C5 --> C4
+    C6 --> C1
+    C6 --> C4
+    C4 -.recursive.-> C4
+
+    style H1 fill:#e1f5ff
+    style H2 fill:#e1f5ff
+    style H3 fill:#e1f5ff
+    style H4 fill:#e1f5ff
+    style E1 fill:#fff4e1
+    style E2 fill:#fff4e1
+    style E3 fill:#fff4e1
+    style E4 fill:#fff4e1
+    style E5 fill:#fff4e1
+    style E6 fill:#fff4e1
+    style E7 fill:#fff4e1
+    style C1 fill:#e8f5e9
+    style C2 fill:#e8f5e9
+    style C3 fill:#e8f5e9
+    style C4 fill:#e8f5e9
+    style C5 fill:#e8f5e9
+    style C6 fill:#e8f5e9
+    style S1 fill:#f3e5f5
+    style S2 fill:#f3e5f5
 ```
 
 ### bluegreen.admin.inc (20 functions)
 
 ```mermaid
 graph TD
-    subgraph "User Interface"
-        U1[admin_form]
-        U2[setup_form]
+    subgraph "Forms"
+        F1[admin_form :10]
+        F2[setup_form :676]
     end
 
     subgraph "Submit Handlers"
-        S1[backup_submit]
-        S2[sync_submit]
-        S3[switch_submit]
-        S4[setup_form_submit]
+        SH1[backup_submit :248]
+        SH2[sync_submit :274]
+        SH3[switch_submit :354]
+        SH4[setup_form_submit :763]
     end
 
     subgraph "Menu Callbacks"
-        C1[switch_environment_callback]
-        C2[sync_environment_callback]
-        C3[backup_environment_callback]
-        C4[clear_cache_callback]
+        CB1[switch_environment_callback :587]
+        CB2[sync_environment_callback :603]
+        CB3[backup_environment_callback :636]
+        CB4[clear_cache_callback :659]
     end
 
     subgraph "Core Operations"
-        O1[switch_environment]
-        O2[sync_database]
-        O3[copy_table]
+        OP1[switch_environment :506]
+        OP2[sync_database :387]
+        OP3[copy_table :445]
     end
 
-    subgraph "Batch System"
-        B1[sync_batch_operation]
-        B2[sync_batch_finished]
-        B3[setup_duplicate_tables]
-        B4[setup_create_config_directories]
-        B5[setup_write_settings]
-        B6[setup_finalize]
-        B7[setup_finished]
+    subgraph "Batch Operations"
+        B1[sync_batch_operation :295]
+        B2[sync_batch_finished :329]
+        B3[setup_duplicate_tables :785]
+        B4[setup_create_config_directories :859]
+        B5[setup_write_settings :889]
+        B6[setup_finalize :1070]
+        B7[setup_finished :1084]
     end
 
-    %% Relationships
-    S2 --> B1
-    S3 --> O1
-    S4 --> B3
-    S4 --> B4
-    S4 --> B5
-    S4 --> B6
+    %% Submit to Operations
+    SH2 --> B1
+    SH3 --> OP1
+    SH4 --> B3
+    SH4 --> B4
+    SH4 --> B5
+    SH4 --> B6
 
-    C1 --> O1
-    C2 --> O2
+    %% Callbacks to Operations
+    CB1 --> OP1
+    CB2 --> OP2
 
-    B1 --> O2
+    %% Batch relationships
+    B1 --> OP2
     B1 --> B2
 
-    style U1 fill:#e1f5ff
-    style U2 fill:#e1f5ff
-    style S1 fill:#fff4e1
-    style S2 fill:#fff4e1
-    style S3 fill:#fff4e1
-    style S4 fill:#fff4e1
-    style O1 fill:#ffccbc
-    style O2 fill:#ffccbc
-    style O3 fill:#ffccbc
+    style F1 fill:#e1f5ff
+    style F2 fill:#e1f5ff
+    style SH1 fill:#fff4e1
+    style SH2 fill:#fff4e1
+    style SH3 fill:#fff4e1
+    style SH4 fill:#fff4e1
+    style CB1 fill:#ffccbc
+    style CB2 fill:#ffccbc
+    style CB3 fill:#ffccbc
+    style CB4 fill:#ffccbc
+    style OP1 fill:#ffe0b2
+    style OP2 fill:#ffe0b2
+    style OP3 fill:#ffe0b2
     style B1 fill:#c8e6c9
     style B2 fill:#c8e6c9
     style B3 fill:#c8e6c9
@@ -260,136 +343,100 @@ graph TD
     style B7 fill:#c8e6c9
 ```
 
-## User Action Flow Diagrams
-
-### Environment Switch Flow
+### bluegreen.install (3 functions)
 
 ```mermaid
-sequenceDiagram
-    participant User
-    participant UI as admin_form
-    participant Submit as switch_submit
-    participant Core as switch_environment
-    participant Cache as clear_cache_callback
-    participant Module as bluegreen.module
+graph TD
+    I1[requirements :10<br/>Check configuration status]
+    I2[install :52<br/>Display welcome message]
+    I3[uninstall :60<br/>Clean up alt_ tables and settings]
 
-    User->>UI: Click "Make Green Live"
-    UI->>Submit: Form submission
-    Submit->>Module: get_active_environment()
-    Submit->>Module: get_idle_environment()
-    Submit->>Core: switch_environment('green')
-    Core->>Module: get_environment_info('green')
-    Core->>Core: Update settings.bluegreen.php
-    Core->>Core: state_set('bluegreen_active_environment', 'green')
-    Submit->>Cache: Redirect to clear_cache
-    Cache->>Cache: backdrop_flush_all_caches()
-    Cache->>UI: Redirect to admin page
-    UI->>User: Show success message
-```
-
-### Database Sync Flow
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant UI as admin_form
-    participant Submit as sync_submit
-    participant Batch as sync_batch_operation
-    participant DB as sync_database
-    participant Config as sync_config_files
-    participant Module as bluegreen.module
-
-    User->>UI: Click "Sync from Blue"
-    UI->>Submit: Form submission
-    Submit->>Batch: batch_set()
-    Batch->>Module: sync_database('blue', 'green')
-    DB->>Module: get_environment_info()
-    DB->>Module: get_shared_tables()
-    DB->>DB: DROP target tables
-    DB->>DB: CREATE TABLE LIKE source
-    DB->>DB: INSERT INTO target SELECT * FROM source
-    Batch->>Module: sync_config_files('blue', 'green')
-    Config->>Module: get_config_directory()
-    Config->>Module: copy_directory()
-    Batch->>Module: set_last_sync('green')
-    Batch->>UI: Show completion message
-```
-
-### Initial Setup Flow
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Setup as setup_form
-    participant Submit as setup_form_submit
-    participant B1 as setup_duplicate_tables
-    participant B2 as setup_create_config_directories
-    participant B3 as setup_write_settings
-    participant B4 as setup_finalize
-    participant Module as bluegreen.module
-
-    User->>Setup: Fill setup form
-    User->>Setup: Choose initial active env
-    Setup->>Submit: Submit form
-    Submit->>B1: Batch: Duplicate tables
-    B1->>Module: get_shared_tables()
-    B1->>B1: CREATE TABLE alt_* LIKE original
-    B1->>B1: INSERT INTO alt_* SELECT * FROM original
-    Submit->>B2: Batch: Create config dirs
-    B2->>Module: create_alt_config_directory()
-    Module->>Module: detect_config_directory()
-    Module->>Module: copy_directory()
-    Submit->>B3: Batch: Write settings
-    B3->>B3: Create settings.bluegreen.php
-    B3->>B3: Update settings.php
-    Submit->>B4: Batch: Finalize
-    B4->>B4: state_set('bluegreen_active_environment')
-    B4->>B4: backdrop_flush_all_caches()
-    B4->>User: Show success messages
+    style I1 fill:#ffcdd2
+    style I2 fill:#ffcdd2
+    style I3 fill:#ffcdd2
 ```
 
 ## Function Complexity Analysis
 
-### High Complexity (5+ function calls)
-- **admin_form()** - Calls 7 module functions
-- **sync_batch_operation()** - Calls 3 functions + manages batch state
-- **setup_create_config_directories()** - Calls 5 functions
+### High Complexity (5+ calls)
+```mermaid
+graph TD
+    A[admin_form]
+    A --> B[is_configured]
+    A --> C[get_active]
+    A --> D[get_idle]
+    A --> E[get_env_info]
+    A --> F[env_installed]
+    A --> G[get_last_sync]
+    A --> H[module_exists]
 
-### Medium Complexity (2-4 function calls)
-- **is_configured()** - Calls 2 functions
-- **sync_config_files()** - Calls 2 functions
-- **create_alt_config_directory()** - Calls 2 functions
-- **switch_submit()** - Calls 3 functions
-- **sync_database()** - Calls 2 functions + DB operations
+    style A fill:#ffccbc,stroke:#ff5722,stroke-width:3px
+```
 
-### Low Complexity (0-1 function calls)
-- Most getter functions (get_active_environment, get_shared_tables, etc.)
-- State management functions
+### Medium Complexity (2-4 calls)
+- **sync_batch_operation** → sync_database, sync_config_files, set_last_sync
+- **is_configured** → get_environment_info, environment_is_installed
+- **switch_submit** → get_active, get_idle, switch_environment
+
+### Low Complexity (0-1 calls)
+- Getter functions (get_active_environment, get_shared_tables, etc.)
+- State functions (get_last_sync, set_last_sync)
 - Simple callbacks
 
 ## Critical Paths
 
-### Most Important Functions (Called by Many)
-1. **get_environment_info()** - Used throughout system for DB config
-2. **get_active_environment()** - Used by UI and operations
-3. **is_configured()** - Gate-keeper for functionality
-4. **get_shared_tables()** - Critical for data integrity during sync
+### Most Called Functions
+```mermaid
+graph TD
+    A[get_environment_info<br/>Called by 3+ functions]
+    B[get_active_environment<br/>Called by multiple UI functions]
+    C[is_configured<br/>Gate-keeper function]
+    D[get_shared_tables<br/>Critical for data integrity]
+
+    style A fill:#ff5722,color:#fff
+    style B fill:#ff9800,color:#fff
+    style C fill:#ffc107
+    style D fill:#ffc107
+```
 
 ### Risk Areas (Single Point of Failure)
-1. **switch_environment()** - File write operations, state changes
-2. **sync_database()** - Large data operations, DROP/CREATE tables
-3. **setup_duplicate_tables()** - Initial setup, creates all alt_ tables
+```mermaid
+graph TD
+    R1[switch_environment<br/>File write operations]
+    R2[sync_database<br/>Large data operations]
+    R3[setup_duplicate_tables<br/>Initial table creation]
+
+    style R1 fill:#f44336,color:#fff,stroke:#b71c1c,stroke-width:3px
+    style R2 fill:#f44336,color:#fff,stroke:#b71c1c,stroke-width:3px
+    style R3 fill:#f44336,color:#fff,stroke:#b71c1c,stroke-width:3px
+```
 
 ## Legend
 
-- 🔵 **Blue** - bluegreen.module functions
-- 🟠 **Orange** - bluegreen.admin.inc functions
-- 🔴 **Red** - bluegreen.install functions
+- 🔵 **Light Blue** - bluegreen.module functions
+- 🟠 **Orange** - bluegreen.admin.inc functions (forms, handlers)
 - 🟢 **Green** - Batch operation functions
+- 🔴 **Red** - bluegreen.install functions
 - **Solid lines** - Direct function calls
 - **Dotted lines** - Recursive calls
+- **Thick borders** - High-risk or high-complexity functions
+
+## Summary Statistics
+
+| Metric | Count |
+|--------|-------|
+| **Total Functions** | 47 |
+| **bluegreen.module** | 18 |
+| **bluegreen.admin.inc** | 20 |
+| **bluegreen.install** | 3 |
+| **Sample modules** | 6 |
+| **Hook Implementations** | 10 |
+| **Menu Callbacks** | 7 |
+| **Batch Operations** | 5 |
+| **Cross-file Dependencies** | 15+ |
 
 ---
 
 **Generated:** 2025-11-08
-**Total Functions Mapped:** 47 across 3 files
+**Total Functions Mapped:** 47 across 3 core files
+**Diagram Format:** Mermaid (renders on GitHub)
